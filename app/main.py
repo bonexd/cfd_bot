@@ -528,6 +528,7 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
             idx_open,
             open_market=market_open,
             open_positions=open_total,
+            equity=acct.equity,
         )
         if not corr.allowed:
             print(f"  {market.name}: {corr.reason}")
