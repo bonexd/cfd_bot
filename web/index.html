@@ -1447,6 +1447,10 @@
         const stage = String(decision.stage || 'waiting').replaceAll('_', ' ');
         const price = m.price == null ? '—' : Number(m.price).toFixed(Number(m.digits ?? 2));
         const group = String(m.group || 'market');
+        const rec = m.recommendation || {};
+        const recRisk = Number(rec.risk_cash || 0);
+        const recLots = Number(rec.suggested_lots || 0);
+        const recCurrency = String(rec.portfolio_currency || '');
         const available = m.broker_available !== false;
         const session = !available ? 'UNAVAILABLE' : (m.open ? 'OPEN' : 'CLOSED');
         const action = available ? `onclick="inspect('${esc(m.key)}')"` : '';
@@ -1459,6 +1463,7 @@
             </div>
             <div class="market-watch-price">${esc(price)}</div>
             <div class="market-watch-meta">${esc(group)} · ${session} · ${esc(stage)}</div>
+            <div class="market-watch-meta">${recRisk > 0 ? ('RISK ' + esc(recCurrency) + ' ' + recRisk.toFixed(2)) : 'RISK —'} · ${recLots > 0 ? ('SIZE ' + recLots) : 'SIZE —'}</div>
           </div>
         `;
       }).join('');
