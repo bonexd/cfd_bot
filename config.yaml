@@ -120,6 +120,20 @@ account:
 risk:
   risk_per_trade_pct: 0.7
 
+  # Small-account bootstrap. These limits apply only while broker-reported
+  # equity is at least 50 and below 200 account-currency units (CHF on a CHF account).
+  # At 200+ the bot automatically returns to the standard settings below.
+  bootstrap:
+    enabled: true
+    min_equity: 50.0
+    target_equity: 200.0
+    risk_per_trade_pct: 1.0
+    max_min_lot_risk_pct: 2.0
+    max_portfolio_allocation_pct: 60.0
+    max_open_positions: 2
+    max_positions_per_market: 1
+    max_index_positions: 1
+
   # Cap estimated broker margin allocated to open CFDs at this percentage of equity.
   # This is an account-wide cap, not 30% per trade.
   max_portfolio_allocation_pct: 30.0
