@@ -33,6 +33,111 @@ class RuntimeRegressionTests(unittest.TestCase):
         rm = RiskManager(cfg)
         self.assertEqual(rm.snapshot()["per_trade"], 0.7)
 
+    def test_bootstrap_profile_activates_between_50_and_200(self):
+        cfg = {
+            "account": {"leverage": 20},
+            "risk": {
+                "risk_per_trade_pct": 0.7,
+                "max_portfolio_allocation_pct": 30.0,
+                "max_open_positions": 12,
+                "max_positions_per_market": 4,
+                "max_index_positions": 8,
+                "daily_loss_enabled": False,
+                "bootstrap": {
+                    "enabled": True,
+                    "min_equity": 50.0,
+                    "target_equity": 200.0,
+                    "risk_per_trade_pct": 1.0,
+                    "max_min_lot_risk_pct": 2.0,
+                    "max_portfolio_allocation_pct": 60.0,
+                    "max_open_positions": 2,
+                    "max_positions_per_market": 1,
+                    "max_index_positions": 1,
+                },
+            },
+        }
+        rm = RiskManager(cfg)
+
+        below = rm.snapshot(49.99)
+        bootstrap = rm.snapshot(50.0)
+        standard = rm.snapshot(200.0)
+
+        self.assertEqual(below["profile"], "below_minimum")
+        self.assertEqual(bootstrap["profile"], "bootstrap")
+        self.assertEqual(bootstrap["per_trade"], 1.0)
+        self.assertEqual(bootstrap["max_portfolio_allocation_pct"], 60.0)
+        self.assertEqual(bootstrap["max_open"], 2)
+        self.assertEqual(standard["profile"], "standard")
+        self.assertEqual(standard["per_trade"], 0.7)
+        self.assertEqual(standard["max_portfolio_allocation_pct"], 30.0)
+        self.assertEqual(standard["max_open"], 12)
+
+    def test_bootstrap_blocks_new_entries_below_50(self):
+        cfg = {
+            "account": {"leverage": 20},
+            "risk": {
+                "risk_per_trade_pct": 0.7,
+                "max_portfolio_allocation_pct": 30.0,
+                "max_open_positions": 12,
+                "max_positions_per_market": 4,
+                "max_index_positions": 8,
+                "daily_loss_enabled": False,
+                "bootstrap": {
+                    "enabled": True,
+                    "min_equity": 50.0,
+                    "target_equity": 200.0,
+                    "risk_per_trade_pct": 1.0,
+                    "max_min_lot_risk_pct": 2.0,
+                    "max_portfolio_allocation_pct": 60.0,
+                    "max_open_positions": 2,
+                    "max_positions_per_market": 1,
+                    "max_index_positions": 1,
+                },
+            },
+        }
+        rm = RiskManager(cfg)
+        decision = rm.check_account(49.99, 0)
+        self.assertFalse(decision.allowed)
+        self.assertIn("below bootstrap minimum", decision.reason)
+
+    def test_bootstrap_can_use_minimum_lot_inside_two_percent_cap(self):
+        market = copy.deepcopy(MARKETS["gold"])
+        market.contract_size = 1.0
+        market.point_value = 1.0
+        market.min_lot = 0.01
+        market.lot_step = 0.01
+        market.max_lot = 2.0
+        market.margin_factor = None
+        cfg = {
+            "account": {"leverage": 20},
+            "risk": {
+                "risk_per_trade_pct": 0.7,
+                "max_portfolio_allocation_pct": 30.0,
+                "max_open_positions": 12,
+                "max_positions_per_market": 4,
+                "max_index_positions": 8,
+                "daily_loss_enabled": False,
+                "bootstrap": {
+                    "enabled": True,
+                    "min_equity": 50.0,
+                    "target_equity": 200.0,
+                    "risk_per_trade_pct": 1.0,
+                    "max_min_lot_risk_pct": 2.0,
+                    "max_portfolio_allocation_pct": 60.0,
+                    "max_open_positions": 2,
+                    "max_positions_per_market": 1,
+                    "max_index_positions": 1,
+                },
+            },
+        }
+        rm = RiskManager(cfg)
+        # CHF 50 * 1% = 0.50 target risk. A 60-point stop risks 0.60
+        # at the 0.01 minimum lot, which is allowed by the 2% (=1.00) hard cap.
+        sized = rm.size_lots(50.0, 60.0, market, price=100.0)
+        self.assertTrue(sized.allowed)
+        self.assertEqual(sized.reason, "bootstrap minimum lot")
+        self.assertAlmostEqual(sized.lots, 0.01)
+
     def test_terminal_bar_scheduler_skips_redundant_scans(self):
         state = {
             "bar_state": {
