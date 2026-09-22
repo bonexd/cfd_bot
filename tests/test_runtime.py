@@ -15,6 +15,7 @@ from main import (
     capital_map,
     effective_trade_cfg,
     enabled_markets,
+    portfolio_adjusted_protection,
     resolved_markets,
     sync_manual_trade_protection,
     terminal_scan_due,
@@ -191,7 +192,13 @@ class RuntimeRegressionTests(unittest.TestCase):
             deal_id="manual-1",
         )
 
-        changed = sync_manual_trade_protection(cfg, Broker(), state, [pos])
+        class Risk:
+            def snapshot(self, equity):
+                return {"per_trade": 2.0}
+
+        changed = sync_manual_trade_protection(
+            cfg, Broker(), state, [pos], equity=100.0, risk=Risk()
+        )
         self.assertTrue(changed)
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0][:3], ("manual-1", 98.0, 106.0))
@@ -200,9 +207,45 @@ class RuntimeRegressionTests(unittest.TestCase):
         # Simulate the user manually changing SL/TP after the bot's first sync.
         pos.sl = 99.0
         pos.tp = 108.0
-        changed_again = sync_manual_trade_protection(cfg, Broker(), state, [pos])
+        changed_again = sync_manual_trade_protection(
+            cfg, Broker(), state, [pos], equity=100.0, risk=Risk()
+        )
         self.assertFalse(changed_again)
         self.assertEqual(len(calls), 1)
+
+    def test_portfolio_based_protection_scales_cash_risk_and_preserves_rr(self):
+        market = copy.deepcopy(MARKETS["gold"])
+        market.point_value = 1.0
+        market.contract_size = 1.0
+        market.digits = 2
+
+        class Risk:
+            def snapshot(self, equity):
+                return {"per_trade": 2.0}
+
+        pos = Position(
+            ticket=777,
+            symbol="GOLD",
+            side="buy",
+            lots=1.0,
+            entry=100.0,
+            sl=0.0,
+            tp=0.0,
+            deal_id="manual-portfolio",
+        )
+        rec = {
+            "side": "buy",
+            "price": 100.0,
+            "sl": 95.0,
+            "tp": 110.0,
+        }
+        adjusted = portfolio_adjusted_protection(100.0, Risk(), market, pos, rec)
+        self.assertIsNotNone(adjusted)
+        self.assertEqual(adjusted["risk_cash"], 2.0)
+        self.assertEqual(adjusted["sl"], 98.0)
+        self.assertEqual(adjusted["tp"], 104.0)
+        self.assertAlmostEqual(adjusted["reward_risk"], 2.0)
+        self.assertTrue(adjusted["portfolio_adjusted"])
 
     def test_manual_trade_sync_ignores_bot_owned_deal(self):
         class Broker:
