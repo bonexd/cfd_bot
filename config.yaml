@@ -103,6 +103,10 @@ markets:
     live_enabled: true
 manual_trade_protection:
   enabled: true
+  # Adapt the bot's technical SL/TP to current account equity and the actual
+  # manual position size. Never widen beyond the strategy's original stop.
+  portfolio_based: true
+  preserve_strategy_reward_risk: true
   # Only use a recent, same-direction bot recommendation for the same market.
   max_recommendation_age_seconds: 300
   require_matching_side: true
