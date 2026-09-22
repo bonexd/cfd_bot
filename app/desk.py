@@ -19,6 +19,7 @@ from main import (
     load_cfg,
     load_state,
     make_broker,
+    resolved_markets,
     run_once,
     sync_market_rules,
 )
@@ -48,6 +49,7 @@ class Desk:
         ensure_logs()
         self.broker = broker if broker is not None else make_broker(self.cfg, self.mode, self.markets)
         self.live_map = live_map if live_map is not None else capital_map(self.markets, self.broker)
+        self.markets = resolved_markets(self.markets, self.live_map)
         if any(not getattr(m, "broker_rules", False) for m in self.markets):
             sync_market_rules(self.markets, self.broker, self.live_map)
         self.risk = risk if risk is not None else RiskManager(self.cfg)
