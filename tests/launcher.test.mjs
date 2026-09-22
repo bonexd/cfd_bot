@@ -10,6 +10,15 @@ const requirements = fs.readFileSync(path.join(root, 'requirements.txt'), 'utf8'
 const updater = fs.readFileSync(path.join(root, 'UPDATE.bat'), 'utf8');
 const gitignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
 
+test('both launchers repair a virtual environment that is missing pip', () => {
+  for (const launcher of [start, live]) {
+    assert.match(launcher, /-m pip --version/);
+    assert.match(launcher, /-m ensurepip --upgrade/);
+    assert.match(launcher, /pip repair failed\. Rebuilding the virtual environment/i);
+    assert.match(launcher, /-m venv \.venv/);
+  }
+});
+
 test('demo launcher bootstraps Python and every declared dependency', () => {
   assert.match(start, /winget install -e --id Python\.Python\.3\.12/);
   assert.match(start, /https:\/\/www\.python\.org\/ftp\/python\/3\.12\.10\/python-3\.12\.10-amd64\.exe/);
