@@ -396,9 +396,62 @@ class CapitalBroker:
             message = f"status={status or 'UNKNOWN'} ref={ref}"
             if reason:
                 message += f" reason={reason}"
-            return Fill(ticket, epic, side, lots, price, sl, tp, comment, ok, message[:180])
+            return Fill(
+                ticket, epic, side, lots, price, sl, tp, comment, ok, message[:180],
+                deal_id=deal_id,
+                deal_reference=ref,
+            )
         except Exception as exc:
             return Fill(0, epic, side, lots, 0, sl, tp, comment, False, str(exc)[:180])
+
+    def modify_position(self, deal_id: str, sl: float, tp: float, comment: str = "modify") -> Fill:
+        deal_id = str(deal_id or "").strip()
+        if not deal_id:
+            return Fill(0, "", "", 0, 0, sl, tp, comment, False, "no deal id")
+        body = {
+            "stopLevel": float(sl),
+            "profitLevel": float(tp),
+        }
+        try:
+            data = self._request("PUT", f"/api/v1/positions/{deal_id}", payload=body)
+            self._invalidate_account_cache()
+            ref = str(data.get("dealReference") or "")
+            if not ref:
+                return Fill(
+                    abs(hash(deal_id)) % 10_000_000 or 1,
+                    "", "", 0, 0, sl, tp, comment, False,
+                    f"position update returned no dealReference: {str(data)[:120]}",
+                    deal_id=deal_id,
+                )
+            confirm, confirm_error = self._confirm_deal(ref)
+            if not confirm:
+                msg = f"UNCONFIRMED dealReference={ref}"
+                if confirm_error:
+                    msg += f" confirm_error={confirm_error}"
+                return Fill(
+                    abs(hash(deal_id)) % 10_000_000 or 1,
+                    "", "", 0, 0, sl, tp, comment, False, msg[:180],
+                    deal_id=deal_id,
+                    deal_reference=ref,
+                )
+            status = str(confirm.get("dealStatus") or confirm.get("status") or "").upper()
+            ok = status in {"ACCEPTED", "OPEN", "OPENED", "UPDATED", "AMENDED"}
+            reason = str(confirm.get("reason") or confirm.get("message") or "")
+            message = f"status={status or 'UNKNOWN'} ref={ref}"
+            if reason:
+                message += f" reason={reason}"
+            return Fill(
+                abs(hash(deal_id)) % 10_000_000 or 1,
+                "", "", 0, 0, sl, tp, comment, ok, message[:180],
+                deal_id=deal_id,
+                deal_reference=ref,
+            )
+        except Exception as exc:
+            return Fill(
+                abs(hash(deal_id)) % 10_000_000 or 1,
+                "", "", 0, 0, sl, tp, comment, False, str(exc)[:180],
+                deal_id=deal_id,
+            )
 
     def close(self, ticket: int, comment: str = "close") -> Fill:
         for p in self.positions():
