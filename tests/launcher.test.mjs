@@ -44,9 +44,10 @@ test('ZIP downloads bootstrap GitHub tracking automatically', () => {
     assert.match(launcher, /if not exist "\.git"/i);
     assert.match(launcher, /call UPDATE\.bat --bootstrap-only/i);
   }
-  assert.match(updater, /git clone --no-checkout --depth 1/i);
+  assert.match(updater, /git init/i);
+  assert.match(updater, /git fetch origin main --depth 1/i);
   assert.match(updater, /bonexd\/cfd_bot\.git/i);
-  assert.match(updater, /FALLBACK_REPO_URL=https:\/\/github\.com\/bloodvitr\/cfd_bot\.git/i);
+  assert.doesNotMatch(updater, /bloodvitr\/cfd_bot/i);
   assert.match(updater, /git branch --set-upstream-to=origin\/main main/i);
 });
 
