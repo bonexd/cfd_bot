@@ -47,12 +47,12 @@ class RuntimeRegressionTests(unittest.TestCase):
                     "enabled": True,
                     "min_equity": 50.0,
                     "target_equity": 200.0,
-                    "risk_per_trade_pct": 1.0,
-                    "max_min_lot_risk_pct": 2.0,
-                    "max_portfolio_allocation_pct": 60.0,
-                    "max_open_positions": 2,
-                    "max_positions_per_market": 1,
-                    "max_index_positions": 1,
+                    "risk_per_trade_pct": 2.0,
+                    "max_min_lot_risk_pct": 4.0,
+                    "max_portfolio_allocation_pct": 80.0,
+                    "max_open_positions": 3,
+                    "max_positions_per_market": 2,
+                    "max_index_positions": 2,
                 },
             },
         }
@@ -64,9 +64,9 @@ class RuntimeRegressionTests(unittest.TestCase):
 
         self.assertEqual(below["profile"], "below_minimum")
         self.assertEqual(bootstrap["profile"], "bootstrap")
-        self.assertEqual(bootstrap["per_trade"], 1.0)
-        self.assertEqual(bootstrap["max_portfolio_allocation_pct"], 60.0)
-        self.assertEqual(bootstrap["max_open"], 2)
+        self.assertEqual(bootstrap["per_trade"], 2.0)
+        self.assertEqual(bootstrap["max_portfolio_allocation_pct"], 80.0)
+        self.assertEqual(bootstrap["max_open"], 3)
         self.assertEqual(standard["profile"], "standard")
         self.assertEqual(standard["per_trade"], 0.7)
         self.assertEqual(standard["max_portfolio_allocation_pct"], 30.0)
@@ -86,12 +86,12 @@ class RuntimeRegressionTests(unittest.TestCase):
                     "enabled": True,
                     "min_equity": 50.0,
                     "target_equity": 200.0,
-                    "risk_per_trade_pct": 1.0,
-                    "max_min_lot_risk_pct": 2.0,
-                    "max_portfolio_allocation_pct": 60.0,
-                    "max_open_positions": 2,
-                    "max_positions_per_market": 1,
-                    "max_index_positions": 1,
+                    "risk_per_trade_pct": 2.0,
+                    "max_min_lot_risk_pct": 4.0,
+                    "max_portfolio_allocation_pct": 80.0,
+                    "max_open_positions": 3,
+                    "max_positions_per_market": 2,
+                    "max_index_positions": 2,
                 },
             },
         }
@@ -100,7 +100,7 @@ class RuntimeRegressionTests(unittest.TestCase):
         self.assertFalse(decision.allowed)
         self.assertIn("below bootstrap minimum", decision.reason)
 
-    def test_bootstrap_can_use_minimum_lot_inside_two_percent_cap(self):
+    def test_bootstrap_can_use_minimum_lot_inside_four_percent_cap(self):
         market = copy.deepcopy(MARKETS["gold"])
         market.contract_size = 1.0
         market.point_value = 1.0
@@ -121,19 +121,19 @@ class RuntimeRegressionTests(unittest.TestCase):
                     "enabled": True,
                     "min_equity": 50.0,
                     "target_equity": 200.0,
-                    "risk_per_trade_pct": 1.0,
-                    "max_min_lot_risk_pct": 2.0,
-                    "max_portfolio_allocation_pct": 60.0,
-                    "max_open_positions": 2,
-                    "max_positions_per_market": 1,
-                    "max_index_positions": 1,
+                    "risk_per_trade_pct": 2.0,
+                    "max_min_lot_risk_pct": 4.0,
+                    "max_portfolio_allocation_pct": 80.0,
+                    "max_open_positions": 3,
+                    "max_positions_per_market": 2,
+                    "max_index_positions": 2,
                 },
             },
         }
         rm = RiskManager(cfg)
-        # CHF 50 * 1% = 0.50 target risk. A 60-point stop risks 0.60
-        # at the 0.01 minimum lot, which is allowed by the 2% (=1.00) hard cap.
-        sized = rm.size_lots(50.0, 60.0, market, price=100.0)
+        # CHF 50 * 2% = 1.00 target risk. A 120-point stop risks 1.20
+        # at the 0.01 minimum lot, which is allowed by the 4% (=2.00) hard cap.
+        sized = rm.size_lots(50.0, 120.0, market, price=100.0)
         self.assertTrue(sized.allowed)
         self.assertEqual(sized.reason, "bootstrap minimum lot")
         self.assertAlmostEqual(sized.lots, 0.01)
