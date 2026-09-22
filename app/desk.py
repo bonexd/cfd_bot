@@ -46,6 +46,10 @@ class Desk:
         if self.mode not in ("demo", "live"):
             self.mode = "demo"
         self.markets = markets if markets is not None else enabled_markets(self.cfg, self.mode)
+        # Keep the complete configured universe for the dashboard, even if a
+        # broker symbol cannot be resolved. Execution still uses self.markets
+        # after resolved_markets() filters it to broker-available instruments.
+        self.display_markets = list(self.markets)
         ensure_logs()
         self.broker = broker if broker is not None else make_broker(self.cfg, self.mode, self.markets)
         self.live_map = live_map if live_map is not None else capital_map(self.markets, self.broker)
@@ -161,8 +165,12 @@ class Desk:
             markets = []
             decisions = self.state.get("diagnostics") or {}
             streamer_consensus = self.state.get("streamer_consensus") or {}
-            for m in self.markets:
+            for m in self.display_markets:
+                broker_available = m.key in self.live_map
                 open_ok, msg = in_session(m)
+                if not broker_available:
+                    open_ok = False
+                    msg = "Unavailable at broker"
                 q = self.quotes.get(m.key, {})
                 markets.append(
                     {
@@ -176,6 +184,7 @@ class Desk:
                         "spread": q.get("spread"),
                         "digits": m.digits,
                         "updated": q.get("updated"),
+                        "broker_available": broker_available,
                         "decision": decisions.get(m.key) or {},
                         "streamers": streamer_consensus.get(m.key) or {},
                         "broker_rules": {
