@@ -167,6 +167,7 @@ class Desk:
             markets = []
             decisions = self.state.get("diagnostics") or {}
             streamer_consensus = self.state.get("streamer_consensus") or {}
+            recommendations = self.state.get("recommendations") or {}
             for m in self.display_markets:
                 broker_available = m.key in self.live_map
                 open_ok, msg = in_session(m)
@@ -188,6 +189,7 @@ class Desk:
                         "updated": q.get("updated"),
                         "broker_available": broker_available,
                         "decision": decisions.get(m.key) or {},
+                        "recommendation": recommendations.get(m.key) or {},
                         "streamers": streamer_consensus.get(m.key) or {},
                         "broker_rules": {
                             "min_lot": m.min_lot,
