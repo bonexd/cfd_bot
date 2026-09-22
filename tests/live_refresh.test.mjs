@@ -17,11 +17,12 @@ test("live feeds use short bounded refresh intervals", () => {
   assert.match(page, /setInterval\(refresh,\s*5000\)/);
 });
 
-test("demo stays on core live market scope with demo-only frequency overrides", () => {
-  assert.match(config, /demo_market_scope:\s*live\b/);
-  assert.match(config, /demo_frequency:/);
-  assert.match(main, /effective_mode == "live" or \(effective_mode == "demo" and demo_scope == "live"\)/);
-  assert.match(main, /use_live_scope[\s\S]*live_enabled/);
+test("all 21 strategy markets are enabled for demo and live scanning", () => {
+  assert.match(config, /demo_market_scope:\s*all\b/);
+  assert.match(config, /risk:\s*[\s\S]*?risk_per_trade_pct:\s*0\.7\b/);
+  const enabled = [...config.matchAll(/live_enabled:\s*true\b/g)];
+  assert.equal(enabled.length, 21);
+  assert.doesNotMatch(config, /live_enabled:\s*false\b/);
 });
 
 test("Capital.com headlines are merged into the existing news feed", () => {
