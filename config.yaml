@@ -2,9 +2,9 @@ mode: demo  # demo | live  (Capital.com)
 desk: strategy-market-21
 
 execution:
-  # Demo is deliberately more active for testing, but keeps the same
-  # four-market scope as LIVE so broker load stays predictable.
-  demo_market_scope: live
+  # Scan all 21 configured strategy/market pairs. Orders are only submitted
+  # when the assigned strategy and the existing quality/risk gates qualify.
+  demo_market_scope: all
   demo_frequency:
     strategy:
       ema_pullback:
@@ -35,8 +35,8 @@ execution:
       predictor_opposite_p: 0.68
       predictor_opposite_edge: 0.05
 
-# One market assignment per registered strategy. The original four are
-# live-enabled; extra markets remain available for explicit demo research.
+# One market assignment per registered strategy. All 21 are eligible for
+# scanning in both DEMO and LIVE; broker availability is verified at startup.
 markets:
   germany40:
     enabled: true
@@ -52,55 +52,55 @@ markets:
     live_enabled: true
   us500:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   crudeoil:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   eurusd:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   gbpusd:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   usdchf:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   naturalgas:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   silver:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   usdjpy:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   copper:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   audusd:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   uk100:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   japan225:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   hongkong50:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   france40:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   switzerland20:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   eurjpy:
     enabled: true
-    live_enabled: false
+    live_enabled: true
   gbpjpy:
     enabled: true
-    live_enabled: false
+    live_enabled: true
 timeframe: 1m
 lookback_bars: 400
 poll_seconds: 5
@@ -118,7 +118,7 @@ account:
   leverage: 20
 
 risk:
-  risk_per_trade_pct: 0.4
+  risk_per_trade_pct: 0.7
 
   # Cap estimated broker margin allocated to open CFDs at this percentage of equity.
   # This is an account-wide cap, not 30% per trade.
@@ -240,7 +240,7 @@ strategy:
 broker:
   magic: 260917
   deviation_points: 30
-  comment: g40-us100-us30-xau
+  comment: cfd-bot-21
 
 news:
   enabled: true
