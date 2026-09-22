@@ -480,11 +480,84 @@ def _recommendation_age_seconds(recommendation: dict) -> float | None:
         return None
 
 
+def portfolio_adjusted_protection(
+    equity: float,
+    risk: RiskManager,
+    market: Market,
+    position,
+    recommendation: dict,
+) -> dict | None:
+    """Translate a technical SL/TP into a portfolio-cash-risk-aware SL/TP."""
+    try:
+        equity = float(equity)
+        lots = abs(float(getattr(position, "lots", 0) or 0))
+        entry = float(getattr(position, "entry", 0) or 0)
+        rec_price = float(recommendation.get("price") or entry)
+        rec_sl = float(recommendation.get("sl") or 0)
+        rec_tp = float(recommendation.get("tp") or 0)
+    except (TypeError, ValueError):
+        return None
+    if equity <= 0 or lots <= 0 or entry <= 0 or rec_price <= 0 or rec_sl <= 0 or rec_tp <= 0:
+        return None
+
+    risk_snapshot = risk.snapshot(equity)
+    risk_pct = float(risk_snapshot.get("per_trade") or 0)
+    if risk_pct <= 0:
+        return None
+    risk_cash = equity * risk_pct / 100.0
+
+    value_per_price_unit = (
+        max(float(getattr(market, "point_value", 0) or 0), 1e-12)
+        * max(float(getattr(market, "contract_size", 1.0) or 1.0), 1e-12)
+        * lots
+    )
+    if value_per_price_unit <= 0:
+        return None
+
+    strategy_stop = abs(rec_price - rec_sl)
+    strategy_target = abs(rec_tp - rec_price)
+    if strategy_stop <= 0 or strategy_target <= 0:
+        return None
+    rr = strategy_target / strategy_stop
+
+    cash_stop = risk_cash / value_per_price_unit
+    stop_distance = min(strategy_stop, cash_stop)
+    if stop_distance <= 0:
+        return None
+
+    side = str(getattr(position, "side", "") or recommendation.get("side") or "").lower()
+    if side == "buy":
+        sl = entry - stop_distance
+        tp = entry + stop_distance * rr
+    elif side == "sell":
+        sl = entry + stop_distance
+        tp = entry - stop_distance * rr
+    else:
+        return None
+
+    digits = int(getattr(market, "digits", 5) or 5)
+    sl = round(sl, digits)
+    tp = round(tp, digits)
+    estimated_risk_cash = stop_distance * value_per_price_unit
+    return {
+        "sl": sl,
+        "tp": tp,
+        "risk_pct": risk_pct,
+        "risk_cash": risk_cash,
+        "estimated_risk_cash": estimated_risk_cash,
+        "reward_risk": rr,
+        "portfolio_adjusted": stop_distance + 1e-12 < strategy_stop,
+    }
+
+
 def sync_manual_trade_protection(
     cfg: dict,
     broker,
     state: dict,
     positions,
+    *,
+    equity: float | None = None,
+    risk: RiskManager | None = None,
 ) -> bool:
     """Apply the bot's matching SL/TP to each newly seen manual deal exactly once."""
     pcfg = cfg.get("manual_trade_protection") or {}
@@ -550,6 +623,14 @@ def sync_manual_trade_protection(
         if sl <= 0 or tp <= 0:
             continue
 
+        portfolio_meta = None
+        if bool(pcfg.get("portfolio_based", True)) and equity is not None and risk is not None:
+            portfolio_meta = portfolio_adjusted_protection(float(equity), risk, market, pos, rec)
+            if portfolio_meta is None:
+                continue
+            sl = float(portfolio_meta["sl"])
+            tp = float(portfolio_meta["tp"])
+
         result = broker.modify_position(deal_id, sl, tp, "bot-recommended-protection")
         print(
             f"  manual protection {market.name} deal={deal_id}: "
@@ -564,13 +645,20 @@ def sync_manual_trade_protection(
                 "sl": sl,
                 "tp": tp,
                 "recommendation_time": rec.get("time"),
+                "portfolio": portfolio_meta or {},
             }
             remember(
                 "manual_protection",
                 f"applied bot SL/TP once to manual {market.key} deal {deal_id}",
                 how="deal_id_once",
                 market=market.key,
-                extra={"deal_id": deal_id, "side": pos_side, "sl": sl, "tp": tp},
+                extra={
+                    "deal_id": deal_id,
+                    "side": pos_side,
+                    "sl": sl,
+                    "tp": tp,
+                    "portfolio": portfolio_meta or {},
+                },
             )
             changed = True
 
@@ -589,7 +677,7 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
     positions = list(acct.positions or [])
     idx_open = open_index_count(broker, markets, positions)
     note_closed_positions(broker, state, positions)
-    sync_manual_trade_protection(cfg, broker, state, positions)
+    sync_manual_trade_protection(cfg, broker, state, positions, equity=acct.equity, risk=risk)
     gate = risk.check_account(acct.equity, len(positions), idx_open)
     print(f"[{mode}] equity={acct.equity:.2f} {acct.currency} open={len(positions)} index={idx_open} gate={gate.reason}")
     if not gate.allowed:
@@ -872,17 +960,6 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
                 note_decision(state, market, "predict", why, status="blocked", terminal=True, bar_key=bar_key)
                 continue
 
-        state.setdefault("recommendations", {})[market.key] = {
-            "time": datetime.now(timezone.utc).isoformat(),
-            "market": market.key,
-            "side": sig.side,
-            "sl": float(sig.sl),
-            "tp": float(sig.tp),
-            "price": last,
-            "strategy": str(configured_strategy),
-            "bar": bar_key,
-        }
-
         sized = risk.size_lots(
             acct.equity,
             sig.stop_distance,
@@ -904,6 +981,23 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
                 extra={"margin_used": open_margin},
             )
             continue
+
+        risk_snapshot = risk.snapshot(acct.equity)
+        state.setdefault("recommendations", {})[market.key] = {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "market": market.key,
+            "side": sig.side,
+            "sl": float(sig.sl),
+            "tp": float(sig.tp),
+            "price": last,
+            "strategy": str(configured_strategy),
+            "bar": bar_key,
+            "portfolio_equity": float(acct.equity),
+            "portfolio_currency": str(acct.currency or ""),
+            "risk_pct": float(risk_snapshot.get("per_trade") or 0),
+            "risk_cash": float(acct.equity) * float(risk_snapshot.get("per_trade") or 0) / 100.0,
+            "suggested_lots": float(sized.lots),
+        }
 
         guard_key = order_guard_key(market.key, bar_key, str(configured_strategy), sig.side)
         if not reserve_order(
