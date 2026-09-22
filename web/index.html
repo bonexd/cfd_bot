@@ -325,6 +325,75 @@
       gap: 12px;
     }
 
+    .market-watch {
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .market-watch-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      gap: 7px;
+      padding: 10px;
+    }
+    .market-watch-item {
+      min-width: 0;
+      padding: 9px 10px;
+      border: 1px solid var(--line-soft);
+      border-radius: 10px;
+      background: #0b1017;
+      cursor: pointer;
+      transition: border-color .12s ease, background .12s ease, transform .12s ease;
+    }
+    .market-watch-item:hover {
+      border-color: #334158;
+      background: #101722;
+      transform: translateY(-1px);
+    }
+    .market-watch-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 7px;
+    }
+    .market-watch-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      font-weight: 760;
+      color: #d8e0eb;
+    }
+    .market-watch-dot {
+      width: 7px;
+      height: 7px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 0 3px rgba(255,102,122,.08);
+    }
+    .market-watch-dot.open {
+      background: var(--green);
+      box-shadow: 0 0 0 3px rgba(53,208,127,.09);
+    }
+    .market-watch-price {
+      margin-top: 6px;
+      font-size: 14px;
+      font-weight: 720;
+      color: #f0f4f9;
+    }
+    .market-watch-meta {
+      margin-top: 4px;
+      color: var(--muted-2);
+      font-size: 8px;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      letter-spacing: .035em;
+    }
+
     .card {
       border: 1px solid var(--line);
       border-radius: var(--radius);
@@ -777,6 +846,7 @@
       .sidebar .section-card:last-child { grid-column: auto; }
       .chart-head { padding: 12px 12px 4px; }
       .chart-toolbar, .hover { padding-left: 12px; padding-right: 12px; }
+      .market-watch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       canvas { height: 248px; }
       .inspect { padding: 8px; }
       .inspect-head { flex-direction: column; }
@@ -836,9 +906,9 @@
         <div class="metric-foot" id="open-foot">Max —</div>
       </div>
       <div class="metric">
-        <div class="metric-label">Strategy</div>
-        <div class="metric-value" id="strategy">—</div>
-        <div class="metric-foot">Market-specific routing</div>
+        <div class="metric-label">Markets</div>
+        <div class="metric-value" id="market-count">0</div>
+        <div class="metric-foot" id="market-count-foot">Market-specific routing</div>
       </div>
       <div class="metric">
         <div class="metric-label">Realized today</div>
@@ -856,6 +926,16 @@
     </section>
 
     <div class="error-box" id="error"></div>
+
+    <section class="card market-watch">
+      <div class="section-head">
+        <h2 class="section-title">Market watch</h2>
+        <span class="section-count" id="market-watch-count">0</span>
+      </div>
+      <div class="market-watch-grid" id="market-watch-grid">
+        <div class="empty">Waiting for market data</div>
+      </div>
+    </section>
 
     <section class="workspace">
       <div class="charts" id="charts"></div>
@@ -1344,6 +1424,34 @@
       }).join('');
     }
 
+    function renderMarketWatch(markets) {
+      const list = Array.isArray(markets) ? markets : [];
+      $('market-watch-count').textContent = list.length;
+      const root = $('market-watch-grid');
+      if (!list.length) {
+        root.innerHTML = '<div class="empty">No markets enabled</div>';
+        return;
+      }
+
+      root.innerHTML = list.map(m => {
+        const decision = m.decision || {};
+        const stage = String(decision.stage || 'waiting').replaceAll('_', ' ');
+        const price = m.price == null ? '—' : Number(m.price).toFixed(Number(m.digits ?? 2));
+        const group = String(m.group || 'market');
+        const session = m.open ? 'OPEN' : 'CLOSED';
+        return `
+          <div class="market-watch-item" onclick="inspect('${esc(m.key)}')" title="Open ${esc(m.name)} chart">
+            <div class="market-watch-top">
+              <div class="market-watch-name">${esc(m.name)}</div>
+              <span class="market-watch-dot ${m.open ? 'open' : ''}"></span>
+            </div>
+            <div class="market-watch-price">${esc(price)}</div>
+            <div class="market-watch-meta">${esc(group)} · ${session} · ${esc(stage)}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
     function renderStatus(status) {
       state.status = status || {};
       const s = state.status;
@@ -1354,7 +1462,9 @@
       $('berlin').textContent = s.berlin || '--:--';
       $('equity').textContent = money(s.equity, s.currency);
       $('open').textContent = Number(s.open_positions || 0);
-      $('strategy').textContent = String(s.strategy || '—').replaceAll('_', ' ');
+      const enabledMarkets = Array.isArray(s.markets) ? s.markets : [];
+      $('market-count').textContent = enabledMarkets.length;
+      $('market-count-foot').textContent = String(s.strategy || '—').replaceAll('_', ' ') + ' · enabled markets';
       $('realized').textContent = money(risk.realized_today || 0, s.currency);
       $('equity-foot').textContent = mode.toUpperCase() + ' account';
       $('open-foot').textContent = 'Max ' + (risk.max_open ?? '—');
@@ -1415,6 +1525,7 @@
         ' · ' + Number(risk.margin_usage_pct || 0).toFixed(0) + '%';
 
       renderPositions(s.positions || [], s.currency);
+      renderMarketWatch(s.markets || []);
       showError(s.error || '');
     }
 
