@@ -18,6 +18,7 @@ from main import (
     load_cfg,
     load_state,
     make_broker,
+    resolved_markets,
     run_once,
     sync_market_rules,
 )
@@ -178,6 +179,7 @@ def main() -> None:
     print(f"starting Capital.com {args.mode.upper()} session...")
     broker = make_broker(cfg_now, args.mode, markets)
     live_map = capital_map(markets, broker)
+    markets = resolved_markets(markets, live_map)
     sync_market_rules(markets, broker, live_map)
     risk = RiskManager(cfg_now)
     state = load_state()
@@ -238,6 +240,7 @@ def main() -> None:
             cfg_now = load_cfg()
             markets = enabled_markets(cfg_now, args.mode)
             live_map = capital_map(markets, broker)
+            markets = resolved_markets(markets, live_map)
             sync_market_rules(markets, broker, live_map)
             risk = RiskManager(cfg_now)
             if desk is not None:
