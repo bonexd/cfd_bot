@@ -33,6 +33,7 @@ class Desk:
         cfg: dict | None = None,
         mode: str | None = None,
         markets=None,
+        display_markets=None,
         broker=None,
         live_map: dict[str, str] | None = None,
         risk: RiskManager | None = None,
@@ -49,7 +50,7 @@ class Desk:
         # Keep the complete configured universe for the dashboard, even if a
         # broker symbol cannot be resolved. Execution still uses self.markets
         # after resolved_markets() filters it to broker-available instruments.
-        self.display_markets = list(self.markets)
+        self.display_markets = list(display_markets if display_markets is not None else self.markets)
         ensure_logs()
         self.broker = broker if broker is not None else make_broker(self.cfg, self.mode, self.markets)
         self.live_map = live_map if live_map is not None else capital_map(self.markets, self.broker)
