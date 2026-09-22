@@ -4,6 +4,7 @@ import json
 import os
 import time
 import threading
+from collections import deque
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -52,6 +53,8 @@ class CapitalBroker:
         self.security = ""
         self._last_account_state = None
         self._last_account_at = 0.0
+        self._request_times = deque()
+        self._request_lock = threading.Lock()
         try:
             self._login()
             self._select_account()
@@ -176,7 +179,25 @@ class CapitalBroker:
             "X-SECURITY-TOKEN": self.security,
         }
 
+    def _wait_for_request_slot(self, limit: int = 8, window: float = 1.0) -> None:
+        """Smooth REST traffic when scanning many markets."""
+        if not hasattr(self, "_request_times"):
+            self._request_times = deque()
+            self._request_lock = threading.Lock()
+        with self._request_lock:
+            while True:
+                now = time.monotonic()
+                while self._request_times and now - self._request_times[0] >= window:
+                    self._request_times.popleft()
+                if len(self._request_times) < limit:
+                    self._request_times.append(now)
+                    return
+                wait = window - (now - self._request_times[0]) + 0.02
+                if wait > 0:
+                    time.sleep(wait)
+
     def _request(self, method: str, path: str, payload: dict | None = None, query: dict | None = None):
+        self._wait_for_request_slot()
         url = self.base + path
         if query:
             url += "?" + urllib.parse.urlencode(query)
