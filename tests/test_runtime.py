@@ -6,12 +6,19 @@ from datetime import datetime, timezone
 import app  # noqa: F401 - keeps legacy top-level imports available
 
 from broker.capital import CapitalBroker
-from broker.base import AccountState
+from broker.base import AccountState, Fill, Position
 from instruments import MARKETS
 from risk import RiskManager
 from streamers import classify_text
 from research.walk import pick_winner
-from main import capital_map, effective_trade_cfg, enabled_markets, resolved_markets, terminal_scan_due
+from main import (
+    capital_map,
+    effective_trade_cfg,
+    enabled_markets,
+    resolved_markets,
+    sync_manual_trade_protection,
+    terminal_scan_due,
+)
 
 
 class RuntimeRegressionTests(unittest.TestCase):
@@ -137,6 +144,118 @@ class RuntimeRegressionTests(unittest.TestCase):
         self.assertTrue(sized.allowed)
         self.assertEqual(sized.reason, "bootstrap minimum lot")
         self.assertAlmostEqual(sized.lots, 0.01)
+
+    def test_manual_trade_gets_bot_sl_tp_once_and_is_not_overwritten(self):
+        calls = []
+
+        class Broker:
+            def modify_position(self, deal_id, sl, tp, comment="modify"):
+                calls.append((deal_id, sl, tp, comment))
+                return Fill(
+                    1, "GOLD", "buy", 0.01, 0, sl, tp, comment, True, "status=ACCEPTED",
+                    deal_id=deal_id,
+                    deal_reference="p_test",
+                )
+
+        now = datetime.now(timezone.utc).isoformat()
+        state = {
+            "manual_protection_initialized": True,
+            "bot_deal_ids": {},
+            "manual_protection": {},
+            "recommendations": {
+                "gold": {
+                    "time": now,
+                    "market": "gold",
+                    "side": "buy",
+                    "sl": 98.0,
+                    "tp": 106.0,
+                }
+            },
+        }
+        cfg = {
+            "manual_trade_protection": {
+                "enabled": True,
+                "max_recommendation_age_seconds": 300,
+                "require_matching_side": True,
+                "ignore_existing_on_first_start": True,
+            }
+        }
+        pos = Position(
+            ticket=123,
+            symbol="GOLD",
+            side="buy",
+            lots=0.01,
+            entry=100.0,
+            sl=0.0,
+            tp=0.0,
+            deal_id="manual-1",
+        )
+
+        changed = sync_manual_trade_protection(cfg, Broker(), state, [pos])
+        self.assertTrue(changed)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:3], ("manual-1", 98.0, 106.0))
+        self.assertEqual(state["manual_protection"]["manual-1"]["status"], "applied_once")
+
+        # Simulate the user manually changing SL/TP after the bot's first sync.
+        pos.sl = 99.0
+        pos.tp = 108.0
+        changed_again = sync_manual_trade_protection(cfg, Broker(), state, [pos])
+        self.assertFalse(changed_again)
+        self.assertEqual(len(calls), 1)
+
+    def test_manual_trade_sync_ignores_bot_owned_deal(self):
+        class Broker:
+            def modify_position(self, deal_id, sl, tp, comment="modify"):
+                raise AssertionError("bot-owned position must not be modified")
+
+        state = {
+            "manual_protection_initialized": True,
+            "bot_deal_ids": {"bot-1": {"market": "gold"}},
+            "manual_protection": {},
+            "recommendations": {
+                "gold": {
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    "side": "buy",
+                    "sl": 98.0,
+                    "tp": 106.0,
+                }
+            },
+        }
+        cfg = {"manual_trade_protection": {"enabled": True}}
+        pos = Position(
+            ticket=124,
+            symbol="GOLD",
+            side="buy",
+            lots=0.01,
+            entry=100.0,
+            sl=98.0,
+            tp=106.0,
+            deal_id="bot-1",
+        )
+        self.assertFalse(sync_manual_trade_protection(cfg, Broker(), state, [pos]))
+
+    def test_capital_position_modify_is_confirmed(self):
+        broker = CapitalBroker.__new__(CapitalBroker)
+        broker._invalidate_account_cache = lambda: None
+        requests = []
+
+        def fake_request(method, path, payload=None, query=None):
+            requests.append((method, path, payload))
+            if method == "PUT" and path == "/api/v1/positions/deal-1":
+                return {"dealReference": "p_test"}
+            if method == "GET" and path == "/api/v1/confirms/p_test":
+                return {"dealStatus": "ACCEPTED", "dealId": "deal-1"}
+            raise AssertionError((method, path))
+
+        broker._request = fake_request
+        result = broker.modify_position("deal-1", 98.0, 106.0)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.deal_id, "deal-1")
+        self.assertEqual(
+            requests[0],
+            ("PUT", "/api/v1/positions/deal-1", {"stopLevel": 98.0, "profitLevel": 106.0}),
+        )
 
     def test_terminal_bar_scheduler_skips_redundant_scans(self):
         state = {
