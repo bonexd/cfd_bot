@@ -145,17 +145,27 @@ def make_broker(cfg: dict, mode: str, markets: list[Market] | None = None):
 
 
 def capital_map(markets: list[Market], broker=None) -> dict[str, str]:
+    """Resolve configured markets and skip only those unavailable at the broker."""
     out: dict[str, str] = {}
     for market in markets:
-        epic = market.epic or CAPITAL_EPICS.get(market.key, "")
-        if not epic:
-            if broker is None:
-                raise RuntimeError(f"{market.name} needs a Capital.com market resolver")
-            epic = broker.resolve_epic(market.search_term or market.name)
-        if epic not in market.live_aliases:
-            market.live_aliases.append(epic)
-        out[market.key] = epic
+        try:
+            epic = market.epic or CAPITAL_EPICS.get(market.key, "")
+            if not epic:
+                if broker is None:
+                    raise RuntimeError(f"{market.name} needs a Capital.com market resolver")
+                epic = broker.resolve_epic(market.search_term or market.name)
+            if epic not in market.live_aliases:
+                market.live_aliases.append(epic)
+            out[market.key] = epic
+        except Exception as exc:
+            print(f"  {market.name}: unavailable on Capital.com, skipping ({exc})")
+    if not out:
+        raise RuntimeError("No configured Capital.com markets could be resolved")
     return out
+
+
+def resolved_markets(markets: list[Market], live_map: dict[str, str]) -> list[Market]:
+    return [market for market in markets if market.key in live_map]
 
 
 def sync_market_rules(markets: list[Market], broker, live_map: dict[str, str]) -> dict[str, dict]:
@@ -864,7 +874,7 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
 def main() -> None:
     load_dotenv(ROOT / ".env")
     cfg = load_cfg()
-    parser = argparse.ArgumentParser(description="Capital.com: DE40 / US100 / US30 / GOLD")
+    parser = argparse.ArgumentParser(description="Capital.com 21-market strategy desk")
     parser.add_argument("--mode", choices=["demo", "live"], default=os.getenv("MODE") or cfg.get("mode", "demo"))
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--only", nargs="*", choices=list(MARKETS.keys()))
@@ -874,13 +884,14 @@ def main() -> None:
     if args.only:
         markets = [m for m in markets if m.key in args.only]
 
-    print("Capital.com desk: Germany 40 · US Tech 100 · Wall Street 30 · Gold")
+    print("Capital.com desk: 21 strategy-mapped markets")
     print("Markets:", ", ".join(m.name for m in markets) or "(none enabled)")
     print("DEMO" if args.mode == "demo" else "LIVE — real money")
 
     ensure_logs()
     broker = make_broker(cfg, args.mode, markets)
     live_map = capital_map(markets, broker)
+    markets = resolved_markets(markets, live_map)
     sync_market_rules(markets, broker, live_map)
     for m in markets:
         print(f"  {m.name}: {live_map[m.key]}")
