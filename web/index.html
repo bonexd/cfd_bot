@@ -1499,9 +1499,18 @@
       const halted = dailyLossEnabled && Boolean(risk.halted);
       const banner = $('risk-banner');
       banner.classList.toggle('halted', halted);
-      $('risk-title').textContent = !dailyLossEnabled
-        ? 'Daily loss limit disabled'
-        : (halted ? 'Daily risk halt active' : 'Risk controls active');
+      const profile = String(risk.profile || 'standard');
+      const bootstrapTarget = Number(risk.bootstrap_target_equity || 0);
+      const bootstrapMin = Number(risk.bootstrap_min_equity || 0);
+      if (profile === 'bootstrap') {
+        $('risk-title').textContent = 'Bootstrap mode · ' + money(bootstrapMin, s.currency) + ' → ' + money(bootstrapTarget, s.currency);
+      } else if (profile === 'below_minimum') {
+        $('risk-title').textContent = 'Below minimum trading equity · ' + money(bootstrapMin, s.currency);
+      } else {
+        $('risk-title').textContent = !dailyLossEnabled
+          ? 'Standard risk profile'
+          : (halted ? 'Daily risk halt active' : 'Standard risk profile');
+      }
 
       const realized = Math.abs(Number(risk.realized_today || 0));
       const startEquity = Number(risk.start_equity || s.equity || 0);
@@ -1512,15 +1521,22 @@
       meter.style.display = dailyLossEnabled ? 'block' : 'none';
       $('risk-meter-fill').style.width = usage.toFixed(1) + '%';
 
+      const profileText = profile === 'bootstrap'
+        ? ('Bootstrap risk ' + (risk.per_trade ?? '—') + '% · margin cap ' + (risk.max_portfolio_allocation_pct ?? '—') + '%')
+        : profile === 'below_minimum'
+          ? 'New entries blocked until minimum equity is restored'
+          : ('Standard risk ' + (risk.per_trade ?? '—') + '% · margin cap ' + (risk.max_portfolio_allocation_pct ?? '—') + '%');
       $('riskline').textContent = dailyLossEnabled
         ? (
-          'Realized ' + money(risk.realized_today || 0, s.currency) +
+          profileText +
+          ' · Realized ' + money(risk.realized_today || 0, s.currency) +
           ' · Start equity ' + money(risk.start_equity, s.currency) +
           ' · ' + usage.toFixed(0) + '% of daily loss allowance used' +
           (risk.reset_note ? ' · ' + risk.reset_note : '')
         )
         : (
-          'Realized ' + money(risk.realized_today || 0, s.currency) +
+          profileText +
+          ' · Realized ' + money(risk.realized_today || 0, s.currency) +
           ' · No automatic daily-loss halt' +
           (risk.reset_note ? ' · ' + risk.reset_note : '')
         );
