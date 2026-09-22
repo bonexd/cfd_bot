@@ -2,7 +2,7 @@
 
 Built by **Abbas** and **[Bone](https://github.com/bonexd)**
 
-A Capital.com CFD trading desk for **Germany 40 (DE40)**, **US Tech 100 (US100)**, **Wall Street 30 (US30)**, and **Gold (GOLD)**.
+A Capital.com CFD trading desk that scans **21 strategy-mapped markets** and only submits orders when the assigned strategy and quality/risk gates qualify the setup.
 
 This hardened local build keeps the original strategy family while adding stricter execution, risk, restart, backtest, predictor, and news safeguards.
 
@@ -26,7 +26,7 @@ This packaged build adds **market-specific directional news scoring** and **pers
 ## Current safeguards
 
 - **Strict demo/live endpoints:** demo and live use separate Capital.com API hosts.
-- **Separate Windows launchers:** `START.bat` is demo; `START_LIVE.bat` requires explicit `LIVE` confirmation.
+- **Separate Windows launchers:** `START.bat` is demo; `START_LIVE.bat` uses a one-time local LIVE acknowledgement.
 - **Position controls:** configurable total, per-market, index, and estimated broker-margin allocation caps.
 - **Optional daily-loss halt:** can be enabled or disabled in `config.yaml`.
 - **Per-trade sizing:** position size is derived from equity, stop distance, and configured risk percentage.
@@ -40,7 +40,7 @@ This packaged build adds **market-specific directional news scoring** and **pers
 
 GitHub ZIP downloads do not contain the hidden `.git` repository metadata. This project repairs that automatically:
 
-- `START.bat` and `START_LIVE.bat` detect a ZIP/non-Git copy and attach it to the configured update source. The updater prefers `https://github.com/bonexd/cfd_bot.git` and temporarily falls back to `https://github.com/bloodvitr/cfd_bot.git` only if the new repo is unavailable.
+- `START.bat` and `START_LIVE.bat` detect a ZIP/non-Git copy and attach it directly to `https://github.com/bonexd/cfd_bot.git`.
 - After that first bootstrap, normal `git pull` works from the same folder.
 - `UPDATE.bat` can be run at any time to bootstrap Git when needed and update to `origin/main`.
 - Before `UPDATE.bat` resets tracked files to GitHub, uncommitted local tracked/untracked changes are saved to Git stash. Local commits are preserved on a backup branch.
@@ -165,7 +165,7 @@ Default mapping:
 | EUR/JPY | `engulfing` |
 | GBP/JPY | `inside_bar` |
 
-Demo and live use the same four live-enabled markets by default, so demo trade frequency and exposure are representative of live. Set `execution.demo_market_scope` to `all` only when deliberately researching the 17 extra demo markets. Their Capital.com epics are resolved through the authenticated market-search API at startup, so the config does not depend on guessed epic codes.
+Demo and live scan all 21 configured strategy/market pairs. Each market still has to pass its assigned strategy, spread, news, predictor/quality, position, margin-allocation, and duplicate-order gates before an order can be submitted. Markets unavailable to the connected Capital.com account are skipped at startup instead of stopping the whole desk.
 
 The bot polls the broker every 5 seconds by default, refreshes the dashboard every 3 seconds, and only evaluates a new candle once. News and streamer feeds refresh every 60 seconds, with Capital.com headlines included in the news desk. Trading sessions are Monday–Friday in this build. Germany 40's ORB strategy forms its opening range from 08:00–08:15 and can enter on a valid breakout until 09:30; after that, the ORB entry window is closed even though the market session remains enabled.
 
