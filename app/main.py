@@ -135,6 +135,9 @@ def load_state() -> dict:
     state.setdefault("order_guard", {})
     state.setdefault("diagnostics", {})
     state.setdefault("open_tickets", [])
+    state.setdefault("recommendations", {})
+    state.setdefault("bot_deal_ids", {})
+    state.setdefault("manual_protection", {})
     return state
 
 
@@ -460,12 +463,133 @@ def note_closed_positions(broker, state: dict, positions=None) -> None:
     state["open_tickets"] = current
 
 
+def _position_id(position) -> str:
+    return str(getattr(position, "deal_id", None) or getattr(position, "ticket", "") or "")
+
+
+def _recommendation_age_seconds(recommendation: dict) -> float | None:
+    raw = recommendation.get("time")
+    if not raw:
+        return None
+    try:
+        when = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - when).total_seconds())
+    except (TypeError, ValueError):
+        return None
+
+
+def sync_manual_trade_protection(
+    cfg: dict,
+    broker,
+    state: dict,
+    positions,
+) -> bool:
+    """Apply the bot's matching SL/TP to each newly seen manual deal exactly once."""
+    pcfg = cfg.get("manual_trade_protection") or {}
+    if not bool(pcfg.get("enabled", True)):
+        return False
+
+    bot_deals = state.setdefault("bot_deal_ids", {})
+    protected = state.setdefault("manual_protection", {})
+    recommendations = state.setdefault("recommendations", {})
+    changed = False
+
+    current = {_position_id(p) for p in positions if _position_id(p)}
+    if not state.get("manual_protection_initialized"):
+        # Do not rewrite positions that already existed when this feature first
+        # came online; they may already have user-adjusted stops/targets.
+        if bool(pcfg.get("ignore_existing_on_first_start", True)):
+            now = datetime.now(timezone.utc).isoformat()
+            for pos in positions:
+                deal_id = _position_id(pos)
+                if deal_id and deal_id not in bot_deals:
+                    protected.setdefault(
+                        deal_id,
+                        {
+                            "status": "preexisting_ignored",
+                            "time": now,
+                            "symbol": getattr(pos, "symbol", ""),
+                        },
+                    )
+        state["manual_protection_initialized"] = True
+        return True
+
+    max_age = float(pcfg.get("max_recommendation_age_seconds", 300) or 0)
+    require_matching_side = bool(pcfg.get("require_matching_side", True))
+
+    for pos in positions:
+        deal_id = _position_id(pos)
+        if not deal_id or deal_id in bot_deals or deal_id in protected:
+            continue
+
+        market = market_by_symbol(getattr(pos, "symbol", ""))
+        if market is None:
+            continue
+        rec = recommendations.get(market.key) or {}
+        if not rec:
+            continue
+
+        age = _recommendation_age_seconds(rec)
+        if max_age > 0 and (age is None or age > max_age):
+            continue
+
+        rec_side = str(rec.get("side") or "").lower()
+        pos_side = str(getattr(pos, "side", "") or "").lower()
+        if require_matching_side and rec_side not in {"buy", "sell"}:
+            continue
+        if require_matching_side and rec_side != pos_side:
+            continue
+
+        try:
+            sl = float(rec.get("sl") or 0)
+            tp = float(rec.get("tp") or 0)
+        except (TypeError, ValueError):
+            continue
+        if sl <= 0 or tp <= 0:
+            continue
+
+        result = broker.modify_position(deal_id, sl, tp, "bot-recommended-protection")
+        print(
+            f"  manual protection {market.name} deal={deal_id}: "
+            f"SL {sl:.{market.digits}f} TP {tp:.{market.digits}f} | {result.message}"
+        )
+        if result.ok:
+            protected[deal_id] = {
+                "status": "applied_once",
+                "time": datetime.now(timezone.utc).isoformat(),
+                "market": market.key,
+                "side": pos_side,
+                "sl": sl,
+                "tp": tp,
+                "recommendation_time": rec.get("time"),
+            }
+            remember(
+                "manual_protection",
+                f"applied bot SL/TP once to manual {market.key} deal {deal_id}",
+                how="deal_id_once",
+                market=market.key,
+                extra={"deal_id": deal_id, "side": pos_side, "sl": sl, "tp": tp},
+            )
+            changed = True
+
+    # Keep bot ownership only for deals that can still matter. Protected
+    # records intentionally remain, so a later user SL/TP edit is never reset.
+    for deal_id in list(bot_deals):
+        if deal_id not in current:
+            bot_deals.pop(deal_id, None)
+            changed = True
+    return changed
+
+
 def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, markets: list[Market], live_map: dict[str, str]) -> None:
     trade_cfg = effective_trade_cfg(cfg, mode)
     acct = broker.account()
     positions = list(acct.positions or [])
     idx_open = open_index_count(broker, markets, positions)
     note_closed_positions(broker, state, positions)
+    sync_manual_trade_protection(cfg, broker, state, positions)
     gate = risk.check_account(acct.equity, len(positions), idx_open)
     print(f"[{mode}] equity={acct.equity:.2f} {acct.currency} open={len(positions)} index={idx_open} gate={gate.reason}")
     if not gate.allowed:
@@ -748,6 +872,17 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
                 note_decision(state, market, "predict", why, status="blocked", terminal=True, bar_key=bar_key)
                 continue
 
+        state.setdefault("recommendations", {})[market.key] = {
+            "time": datetime.now(timezone.utc).isoformat(),
+            "market": market.key,
+            "side": sig.side,
+            "sl": float(sig.sl),
+            "tp": float(sig.tp),
+            "price": last,
+            "strategy": str(configured_strategy),
+            "bar": bar_key,
+        }
+
         sized = risk.size_lots(
             acct.equity,
             sig.stop_distance,
@@ -856,6 +991,14 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
         save_state(state)
 
         if fill.ok:
+            bot_deal_id = str(getattr(fill, "deal_id", "") or "")
+            if bot_deal_id:
+                state.setdefault("bot_deal_ids", {})[bot_deal_id] = {
+                    "time": datetime.now(timezone.utc).isoformat(),
+                    "market": market.key,
+                    "side": sig.side,
+                }
+                save_state(state)
             open_total += 1
             open_by_market[market.key] = open_by_market.get(market.key, 0) + 1
             open_margin += risk.estimate_margin(float(fill.price or last), float(sized.lots), market)
