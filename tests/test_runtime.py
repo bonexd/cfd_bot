@@ -31,7 +31,7 @@ class RuntimeRegressionTests(unittest.TestCase):
     def test_shared_risk_is_point_seven_percent(self):
         cfg = {"account": {"leverage": 20}, "risk": {"risk_per_trade_pct": 0.7}}
         rm = RiskManager(cfg)
-        self.assertEqual(rm.risk_pct, 0.7)
+        self.assertEqual(rm.snapshot()["per_trade"], 0.7)
 
     def test_terminal_bar_scheduler_skips_redundant_scans(self):
         state = {
