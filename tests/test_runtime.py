@@ -11,10 +11,28 @@ from instruments import MARKETS
 from risk import RiskManager
 from streamers import classify_text
 from research.walk import pick_winner
-from main import effective_trade_cfg, enabled_markets, terminal_scan_due
+from main import capital_map, effective_trade_cfg, enabled_markets, resolved_markets, terminal_scan_due
 
 
 class RuntimeRegressionTests(unittest.TestCase):
+    def test_market_resolution_skips_unavailable_symbol(self):
+        markets = [copy.deepcopy(MARKETS["gold"]), copy.deepcopy(MARKETS["us500"])]
+        markets[1].epic = ""
+
+        class Broker:
+            def resolve_epic(self, term):
+                raise RuntimeError("not offered")
+
+        live_map = capital_map(markets, Broker())
+        self.assertEqual(live_map["gold"], "GOLD")
+        self.assertNotIn("us500", live_map)
+        self.assertEqual([m.key for m in resolved_markets(markets, live_map)], ["gold"])
+
+    def test_shared_risk_is_point_seven_percent(self):
+        cfg = {"account": {"leverage": 20}, "risk": {"risk_per_trade_pct": 0.7}}
+        rm = RiskManager(cfg)
+        self.assertEqual(rm.risk_pct, 0.7)
+
     def test_terminal_bar_scheduler_skips_redundant_scans(self):
         state = {
             "bar_state": {
