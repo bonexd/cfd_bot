@@ -349,6 +349,15 @@
       background: #101722;
       transform: translateY(-1px);
     }
+    .market-watch-item.unavailable {
+      cursor: default;
+      opacity: .58;
+    }
+    .market-watch-item.unavailable:hover {
+      border-color: var(--line-soft);
+      background: #0b1017;
+      transform: none;
+    }
     .market-watch-top {
       display: flex;
       align-items: center;
@@ -1438,9 +1447,12 @@
         const stage = String(decision.stage || 'waiting').replaceAll('_', ' ');
         const price = m.price == null ? '—' : Number(m.price).toFixed(Number(m.digits ?? 2));
         const group = String(m.group || 'market');
-        const session = m.open ? 'OPEN' : 'CLOSED';
+        const available = m.broker_available !== false;
+        const session = !available ? 'UNAVAILABLE' : (m.open ? 'OPEN' : 'CLOSED');
+        const action = available ? `onclick="inspect('${esc(m.key)}')"` : '';
+        const title = available ? `Open ${esc(m.name)} chart` : 'Not available from the connected broker';
         return `
-          <div class="market-watch-item" onclick="inspect('${esc(m.key)}')" title="Open ${esc(m.name)} chart">
+          <div class="market-watch-item ${available ? '' : 'unavailable'}" ${action} title="${title}">
             <div class="market-watch-top">
               <div class="market-watch-name">${esc(m.name)}</div>
               <span class="market-watch-dot ${m.open ? 'open' : ''}"></span>
