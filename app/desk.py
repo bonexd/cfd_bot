@@ -216,7 +216,7 @@ class Desk:
                     "daily_loss": self.cfg["risk"]["max_daily_loss_pct"],
                     "max_open": self.cfg["risk"]["max_open_positions"],
                     "max_index": self.cfg["risk"].get("max_index_positions", 2),
-                    **self.risk.snapshot(),
+                    **self.risk.snapshot(equity),
                     "margin_used": margin_used,
                     "margin_limit": margin_limit,
                     "margin_usage_pct": (margin_used / margin_limit * 100.0) if margin_limit > 0 else 0.0,
