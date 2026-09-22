@@ -3,81 +3,49 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 title CFD Bot - GitHub Updater
 
-set "PRIMARY_REPO_URL=https://github.com/bonexd/cfd_bot.git"
-set "FALLBACK_REPO_URL=https://github.com/bloodvitr/cfd_bot.git"
-set "REPO_URL="
+set "REPO_URL=https://github.com/bonexd/cfd_bot.git"
 set "BOOTSTRAP_ONLY=0"
 if /I "%~1"=="--bootstrap-only" set "BOOTSTRAP_ONLY=1"
 
-call :select_repo
-echo Checking primary update source: %PRIMARY_REPO_URL%
-git ls-remote "%PRIMARY_REPO_URL%" HEAD >nul 2>&1
-if not errorlevel 1 (
-  set "REPO_URL=%PRIMARY_REPO_URL%"
-  echo Using primary GitHub source: %PRIMARY_REPO_URL%
-  exit /b 0
-)
-
-echo Primary repo is not available yet.
-echo Falling back to: %FALLBACK_REPO_URL%
-git ls-remote "%FALLBACK_REPO_URL%" HEAD >nul 2>&1
-if not errorlevel 1 (
-  set "REPO_URL=%FALLBACK_REPO_URL%"
-  exit /b 0
-)
-
-echo Neither GitHub update source is reachable.
-exit /b 1
-
-:ensure_git
-if errorlevel 1 goto :fail
-
-call :select_repo
+call :ensure_git
 if errorlevel 1 goto :fail
 
 git rev-parse --is-inside-work-tree >nul 2>&1
 if errorlevel 1 (
-  echo ZIP copy detected. Creating Git metadata...
-  set "BOOTSTRAP_DIR=%TEMP%\cfd_bot_git_%RANDOM%_%RANDOM%"
-  git clone --no-checkout --depth 1 "%REPO_URL%" "!BOOTSTRAP_DIR!"
-  if errorlevel 1 (
-    echo Could not download Git metadata from GitHub.
-    if exist "!BOOTSTRAP_DIR!" rmdir /s /q "!BOOTSTRAP_DIR!" >nul 2>&1
-    goto :fail
-  )
-  powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Move-Item -LiteralPath '!BOOTSTRAP_DIR!\.git' -Destination '%CD%\.git'"
-  if errorlevel 1 (
-    echo Could not attach Git metadata to this folder.
-    if exist "!BOOTSTRAP_DIR!" rmdir /s /q "!BOOTSTRAP_DIR!" >nul 2>&1
-    goto :fail
-  )
-  if exist "!BOOTSTRAP_DIR!" rmdir /s /q "!BOOTSTRAP_DIR!" >nul 2>&1
-  git remote set-url origin "%REPO_URL%" >nul 2>&1
+  echo ZIP/non-Git copy detected. Attaching GitHub tracking...
+  git init
+  if errorlevel 1 goto :fail
+  git remote remove origin >nul 2>&1
+  git remote add origin "%REPO_URL%"
+  if errorlevel 1 goto :fail
+  git fetch origin main --depth 1
+  if errorlevel 1 goto :fail
+  git reset origin/main
+  if errorlevel 1 goto :fail
+  git branch -M main
   git branch --set-upstream-to=origin/main main >nul 2>&1
-  echo GitHub tracking attached successfully.
+  echo GitHub tracking attached to bonexd/cfd_bot.
 )
 
-if "%BOOTSTRAP_ONLY%"=="1" (
-  exit /b 0
-)
+if "%BOOTSTRAP_ONLY%"=="1" exit /b 0
 
 echo.
-echo Updating from GitHub...
-
-git remote set-url origin "%REPO_URL%" >nul 2>&1
+echo Updating from bonexd/cfd_bot...
+git remote set-url origin "%REPO_URL%"
+if errorlevel 1 goto :fail
 git fetch origin main --prune
 if errorlevel 1 goto :fail
 
 set "DIRTY=0"
 for /f "delims=" %%A in ('git status --porcelain') do set "DIRTY=1"
 if "!DIRTY!"=="1" (
-  echo Local file changes detected. Saving them to Git stash...
+  echo Local changes detected. Saving them to Git stash...
   git stash push -u -m "Automatic backup before UPDATE.bat"
   if errorlevel 1 goto :fail
 )
 
+set "AHEAD=0"
 for /f %%A in ('git rev-list --count origin/main..HEAD 2^>nul') do set "AHEAD=%%A"
-if not defined AHEAD set "AHEAD=0"
 if not "!AHEAD!"=="0" (
   set "BACKUP_BRANCH=local-backup-%RANDOM%-%RANDOM%"
   git branch "!BACKUP_BRANCH!" HEAD
@@ -92,13 +60,11 @@ if errorlevel 1 goto :fail
 git branch --set-upstream-to=origin/main main >nul 2>&1
 
 echo.
-echo Updated successfully.
+echo Updated successfully from bonexd/cfd_bot.
 git log -1 --oneline
 if "!DIRTY!"=="1" (
-  echo.
-  echo Your previous local file changes were preserved in Git stash.
+  echo Your previous local changes are preserved in Git stash.
   echo Run: git stash list
-  echo to see them. They were not reapplied automatically.
 )
 exit /b 0
 
@@ -109,20 +75,13 @@ if not errorlevel 1 exit /b 0
 echo Git was not found. Attempting to install Git for Windows...
 where winget >nul 2>&1
 if errorlevel 1 (
-  echo Git is required for GitHub updates and WinGet is unavailable.
-  echo Install Git for Windows, then run UPDATE.bat again.
+  echo Git is required. Install Git for Windows, then run UPDATE.bat again.
   exit /b 1
 )
-
 winget install -e --id Git.Git --source winget --accept-package-agreements --accept-source-agreements --silent
-if errorlevel 1 (
-  echo Automatic Git installation failed.
-  exit /b 1
-)
-
+if errorlevel 1 exit /b 1
 if exist "%ProgramFiles%\Git\cmd\git.exe" set "PATH=%ProgramFiles%\Git\cmd;%PATH%"
 if exist "%LocalAppData%\Programs\Git\cmd\git.exe" set "PATH=%LocalAppData%\Programs\Git\cmd;%PATH%"
-
 where git >nul 2>&1
 if errorlevel 1 (
   echo Git was installed but this window cannot see it yet.
