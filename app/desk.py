@@ -156,7 +156,8 @@ class Desk:
             currency = getattr(acct, "currency", None) or (self.cfg.get("account") or {}).get("currency") or "EUR"
             positions = [self._position_payload(p, currency) for p in broker_positions]
             margin_used = gross_open_margin(broker_positions, self.risk)
-            allocation_pct = float(self.cfg["risk"].get("max_portfolio_allocation_pct", 100) or 0)
+            risk_snapshot = self.risk.snapshot(equity)
+            allocation_pct = float(risk_snapshot.get("max_portfolio_allocation_pct", 100) or 0)
             margin_limit = (float(equity) * allocation_pct / 100.0) if equity is not None else 0.0
 
             for key, quote in (self.state.get("quotes") or {}).items():
@@ -216,7 +217,7 @@ class Desk:
                     "daily_loss": self.cfg["risk"]["max_daily_loss_pct"],
                     "max_open": self.cfg["risk"]["max_open_positions"],
                     "max_index": self.cfg["risk"].get("max_index_positions", 2),
-                    **self.risk.snapshot(equity),
+                    **risk_snapshot,
                     "margin_used": margin_used,
                     "margin_limit": margin_limit,
                     "margin_usage_pct": (margin_used / margin_limit * 100.0) if margin_limit > 0 else 0.0,
