@@ -179,6 +179,7 @@ def main() -> None:
     print(f"starting Capital.com {args.mode.upper()} session...")
     broker = make_broker(cfg_now, args.mode, markets)
     live_map = capital_map(markets, broker)
+    display_markets = list(markets)
     markets = resolved_markets(markets, live_map)
     sync_market_rules(markets, broker, live_map)
     risk = RiskManager(cfg_now)
@@ -195,6 +196,7 @@ def main() -> None:
             cfg=cfg_now,
             mode=args.mode,
             markets=markets,
+            display_markets=display_markets,
             broker=broker,
             live_map=live_map,
             risk=risk,
