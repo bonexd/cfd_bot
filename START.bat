@@ -135,6 +135,28 @@ if not exist "%VENV_PY%" (
 
 :dependencies
 echo [3/5] Checking dependencies...
+"%VENV_PY%" -m pip --version >nul 2>&1
+if errorlevel 1 (
+  echo pip is missing from the virtual environment. Repairing it...
+  "%VENV_PY%" -m ensurepip --upgrade
+  if errorlevel 1 (
+    echo pip repair failed. Rebuilding the virtual environment...
+    call :detect_python
+    if errorlevel 1 goto :fail
+    if exist ".venv" rmdir /s /q ".venv"
+    if "%PY_KIND%"=="launcher" (
+      %PY_EXE% %PY_ARGS% -m venv .venv
+    ) else (
+      "%PY_EXE%" -m venv .venv
+    )
+    if errorlevel 1 goto :fail
+  )
+  "%VENV_PY%" -m pip --version >nul 2>&1
+  if errorlevel 1 (
+    echo pip is still unavailable after repair/rebuild.
+    goto :fail
+  )
+)
 "%VENV_PY%" -c "import pandas,yaml,dotenv,optuna" >nul 2>&1
 if errorlevel 1 (
   echo Installing dependencies...
