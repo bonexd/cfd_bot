@@ -57,15 +57,18 @@ test('both launchers show bxane as visible author', () => {
   }
 });
 
-test('ZIP downloads bootstrap GitHub tracking automatically', () => {
+test('ZIP downloads bootstrap only from bxane-dev/cfd-bot', () => {
   for (const launcher of [start, live]) {
     assert.match(launcher, /if not exist "\.git"/i);
     assert.match(launcher, /call UPDATE\.bat --bootstrap-only/i);
   }
   assert.match(updater, /git init/i);
   assert.match(updater, /git fetch origin main --depth 1/i);
-  assert.match(updater, /bonexd\/cfd_bot\.git/i);
+  assert.match(updater, /bxane-dev\/cfd-bot\.git/i);
+  assert.doesNotMatch(updater, /bonexd\/cfd_bot\.git/i);
   assert.doesNotMatch(updater, /bloodvitr\/cfd_bot/i);
+  assert.match(updater, /:lock_origin/i);
+  assert.match(updater, /if \/I not "!ORIGIN_URL!"=="%REPO_URL%"/i);
   assert.match(updater, /git branch --set-upstream-to=origin\/main main/i);
 });
 
