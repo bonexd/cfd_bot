@@ -4,7 +4,7 @@ cd /d "%~dp0"
 title CFD Bot - Capital.com DEMO
 
 echo ============================================================
-echo ^|              BY ABBAS AND BONE @BONEXD              ^|
+echo ^|                       BY BXANE                       ^|
 echo ============================================================
 echo.
 
