@@ -26,5 +26,5 @@ jobs:
       - name: Verify 21 markets and shared risk
         run: |
           python -c "import yaml, app; from main import enabled_markets; from instruments import MARKETS; cfg=yaml.safe_load(open('config.yaml', encoding='utf-8')); assert cfg['risk']['risk_per_trade_pct']==0.7; assert len(MARKETS)==21; assert len(enabled_markets(cfg,'demo'))==21; assert len(enabled_markets(cfg,'live'))==21; assert all((cfg['markets'][k] or {}).get('live_enabled') is True for k in MARKETS)"
-      - name: Verify bonexd updater
-        run: python -c "from pathlib import Path; s=Path('UPDATE.bat').read_text(encoding='utf-8'); assert 'https://github.com/bonexd/cfd_bot.git' in s; assert 'bloodvitr/cfd_bot' not in s"
+      - name: Verify bxane-dev updater source
+        run: python -c "from pathlib import Path; s=Path('UPDATE.bat').read_text(encoding='utf-8'); assert 'https://github.com/bxane-dev/cfd-bot.git' in s; assert 'https://github.com/bonexd/cfd_bot.git' not in s; assert 'bloodvitr/cfd_bot' not in s; assert ':lock_origin' in s"
