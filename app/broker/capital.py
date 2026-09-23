@@ -14,6 +14,7 @@ from .base import AccountState, Fill, Position, utcnow
 
 DEMO_URL = "https://demo-api-capital.backend-capital.com"
 LIVE_URL = "https://api-capital.backend-capital.com"
+STREAM_URL = "wss://api-streaming-capital.backend-capital.com/connect"
 SESSION_STAMP = Path(__file__).resolve().parents[2] / "logs" / "capital_session_post.txt"
 SESSION_MIN_INTERVAL = 1.10
 _SESSION_LOCK = threading.Lock()
@@ -55,6 +56,14 @@ class CapitalBroker:
         self._last_account_at = 0.0
         self._request_times = deque()
         self._request_lock = threading.Lock()
+        self._stream_lock = threading.Lock()
+        self._stream_quotes: dict[str, dict] = {}
+        self._stream_thread: threading.Thread | None = None
+        self._stream_stop = threading.Event()
+        self._stream_epics: tuple[str, ...] = ()
+        self._stream_connected = False
+        self._stream_last_error = ""
+        self._stream_last_message_at = 0.0
         try:
             self._login()
             self._select_account()
@@ -279,6 +288,141 @@ class CapitalBroker:
                 )
             )
         return out
+
+    def start_quote_stream(self, epics) -> bool:
+        """Subscribe to Capital.com's WebSocket quotes for up to 40 epics."""
+        try:
+            import websocket  # noqa: F401
+        except Exception as exc:
+            self._stream_last_error = f"websocket unavailable: {exc}"
+            return False
+
+        cleaned = tuple(dict.fromkeys(str(x or "").strip() for x in epics if str(x or "").strip()))[:40]
+        if not cleaned:
+            return False
+        if self._stream_thread is not None and self._stream_thread.is_alive():
+            if cleaned == self._stream_epics:
+                return True
+            return False
+
+        self._stream_epics = cleaned
+        self._stream_stop.clear()
+        self._stream_thread = threading.Thread(
+            target=self._quote_stream_loop,
+            name="capital-quote-stream",
+            daemon=True,
+        )
+        self._stream_thread.start()
+        return True
+
+    def stop_quote_stream(self) -> None:
+        self._stream_stop.set()
+
+    def _quote_stream_loop(self) -> None:
+        import websocket
+
+        while not self._stream_stop.is_set():
+            ws = None
+            try:
+                ws = websocket.create_connection(
+                    STREAM_URL,
+                    timeout=15,
+                    enable_multithread=True,
+                )
+                ws.settimeout(2.0)
+                subscribe = {
+                    "destination": "marketData.subscribe",
+                    "correlationId": "desk-subscribe",
+                    "cst": self.cst,
+                    "securityToken": self.security,
+                    "payload": {"epics": list(self._stream_epics)},
+                }
+                ws.send(json.dumps(subscribe))
+                self._stream_connected = True
+                self._stream_last_error = ""
+                last_ping = time.monotonic()
+
+                while not self._stream_stop.is_set():
+                    now = time.monotonic()
+                    if now - last_ping >= 240:
+                        ws.send(
+                            json.dumps(
+                                {
+                                    "destination": "ping",
+                                    "correlationId": "desk-ping",
+                                    "cst": self.cst,
+                                    "securityToken": self.security,
+                                }
+                            )
+                        )
+                        last_ping = now
+                    try:
+                        raw = ws.recv()
+                    except websocket.WebSocketTimeoutException:
+                        continue
+                    if not raw:
+                        continue
+                    try:
+                        message = json.loads(raw)
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    if str(message.get("destination") or "") != "quote":
+                        continue
+                    payload = message.get("payload") or {}
+                    epic = str(payload.get("epic") or "").strip()
+                    try:
+                        bid = float(payload.get("bid") or 0)
+                        ask = float(payload.get("ofr") or payload.get("offer") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if not epic or bid <= 0 or ask <= 0:
+                        continue
+                    received = time.monotonic()
+                    with self._stream_lock:
+                        self._stream_quotes[epic] = {
+                            "bid": bid,
+                            "ask": ask,
+                            "timestamp": payload.get("timestamp"),
+                            "received_at": received,
+                        }
+                    self._stream_last_message_at = received
+            except Exception as exc:
+                self._stream_connected = False
+                self._stream_last_error = str(exc)[:180]
+                if not self._stream_stop.wait(1.0):
+                    continue
+            finally:
+                self._stream_connected = False
+                if ws is not None:
+                    try:
+                        ws.close()
+                    except Exception:
+                        pass
+
+    def stream_quote(self, epic: str, max_age: float = 5.0):
+        with self._stream_lock:
+            row = dict(self._stream_quotes.get(str(epic or "")) or {})
+        if not row:
+            return None
+        received = float(row.get("received_at") or 0.0)
+        age = time.monotonic() - received
+        if max_age > 0 and age > max_age:
+            return None
+        return float(row["bid"]), float(row["ask"]), max(0.0, age)
+
+    def quote_stream_status(self) -> dict:
+        age = None
+        if self._stream_last_message_at:
+            age = max(0.0, time.monotonic() - self._stream_last_message_at)
+        with self._stream_lock:
+            quote_count = len(self._stream_quotes)
+        return {
+            "connected": bool(self._stream_connected),
+            "subscribed": len(self._stream_epics),
+            "quotes": quote_count,
+            "last_message_age": age,
+            "error": self._stream_last_error,
+        }
 
     def resolve_epic(self, search_term: str) -> str:
         """Resolve a configured market name/code to an account-available Capital.com epic."""
