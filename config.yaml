@@ -122,8 +122,11 @@ manual_trade_protection:
 timeframe: 1m
 lookback_bars: 400
 poll_seconds: 5
-snapshot_cache_seconds: 5
-dashboard_account_cache_seconds: 6
+# Dashboard status is mostly fed from the WebSocket quote cache.
+snapshot_cache_seconds: 0.25
+dashboard_account_cache_seconds: 2
+dashboard_rest_fallback_quotes_per_refresh: 2
+dashboard_chart_cache_seconds: 10
 equity_log_seconds: 30
 timezone: Europe/Berlin
 
