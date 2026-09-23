@@ -53,7 +53,7 @@ class RuntimeRegressionTests(unittest.TestCase):
                 "daily_loss_enabled": False,
                 "bootstrap": {
                     "enabled": True,
-                    "min_equity": 50.0,
+                    "min_equity": 40.0,
                     "target_equity": 200.0,
                     "risk_per_trade_pct": 2.0,
                     "max_min_lot_risk_pct": 4.0,
@@ -66,7 +66,7 @@ class RuntimeRegressionTests(unittest.TestCase):
         }
         rm = RiskManager(cfg)
 
-        below = rm.snapshot(49.99)
+        below = rm.snapshot(39.99)
         bootstrap = rm.snapshot(50.0)
         standard = rm.snapshot(200.0)
 
@@ -92,7 +92,7 @@ class RuntimeRegressionTests(unittest.TestCase):
                 "daily_loss_enabled": False,
                 "bootstrap": {
                     "enabled": True,
-                    "min_equity": 50.0,
+                    "min_equity": 40.0,
                     "target_equity": 200.0,
                     "risk_per_trade_pct": 2.0,
                     "max_min_lot_risk_pct": 4.0,
@@ -104,7 +104,7 @@ class RuntimeRegressionTests(unittest.TestCase):
             },
         }
         rm = RiskManager(cfg)
-        decision = rm.check_account(49.99, 0)
+        decision = rm.check_account(39.99, 0)
         self.assertFalse(decision.allowed)
         self.assertIn("below bootstrap minimum", decision.reason)
 
@@ -127,7 +127,7 @@ class RuntimeRegressionTests(unittest.TestCase):
                 "daily_loss_enabled": False,
                 "bootstrap": {
                     "enabled": True,
-                    "min_equity": 50.0,
+                    "min_equity": 40.0,
                     "target_equity": 200.0,
                     "risk_per_trade_pct": 2.0,
                     "max_min_lot_risk_pct": 4.0,
