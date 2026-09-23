@@ -68,7 +68,21 @@ class Desk:
         self._last_account = None
         self._snapshot_cache: dict | None = None
         self._snapshot_cache_at = 0.0
+        self._quote_rr_index = 0
+        self._stream_enabled = False
+        self._start_quote_stream()
         self._refresh_quotes()
+
+    def _start_quote_stream(self) -> None:
+        starter = getattr(self.broker, "start_quote_stream", None)
+        if not callable(starter):
+            return
+        epics = [self.live_map.get(m.key, m.epic) for m in self.markets]
+        try:
+            self._stream_enabled = bool(starter(epics))
+        except Exception as exc:
+            self._stream_enabled = False
+            self.last_error = f"quote stream unavailable: {str(exc)[:120]}"
 
     def _market_for_symbol(self, symbol: str):
         symbol = str(symbol or "")
@@ -160,9 +174,7 @@ class Desk:
             allocation_pct = float(risk_snapshot.get("max_portfolio_allocation_pct", 100) or 0)
             margin_limit = (float(equity) * allocation_pct / 100.0) if equity is not None else 0.0
 
-            for key, quote in (self.state.get("quotes") or {}).items():
-                if isinstance(quote, dict):
-                    self.quotes[key] = dict(quote)
+            self._refresh_quotes_locked()
 
             markets = []
             decisions = self.state.get("diagnostics") or {}
@@ -214,6 +226,11 @@ class Desk:
                 "markets": markets,
                 "berlin": datetime.now(BERLIN).strftime("%a %H:%M"),
                 "error": account_error or self.last_error,
+                "quote_stream": (
+                    self.broker.quote_stream_status()
+                    if hasattr(self.broker, "quote_stream_status")
+                    else {"connected": False, "subscribed": 0, "quotes": 0, "error": ""}
+                ),
                 "risk": {
                     "per_trade": self.cfg["risk"]["risk_per_trade_pct"],
                     "daily_loss": self.cfg["risk"]["max_daily_loss_pct"],
@@ -299,22 +316,82 @@ class Desk:
             self._refresh_quotes_locked()
 
     def _refresh_quotes_locked(self) -> None:
+        # First reuse quotes already produced by the trading scan.
+        for key, quote in (self.state.get("quotes") or {}).items():
+            if isinstance(quote, dict):
+                self.quotes[key] = dict(quote)
+
+        # Prefer Capital.com's WebSocket stream. This is local-memory work and
+        # can be called on every dashboard status request without REST traffic.
+        stream_quote = getattr(self.broker, "stream_quote", None)
+        missing = []
         for m in self.markets:
+            epic = self.live_map.get(m.key, m.epic)
+            streamed = None
+            if callable(stream_quote):
+                try:
+                    streamed = stream_quote(epic, max_age=5.0)
+                except Exception:
+                    streamed = None
+            if streamed:
+                bid, ask, age = streamed
+                self.quotes[m.key] = {
+                    "price": (bid + ask) / 2.0,
+                    "spread": ask - bid,
+                    "bid": bid,
+                    "ask": ask,
+                    "age_ms": int(age * 1000),
+                    "source": "stream",
+                    "updated": datetime.now(BERLIN).strftime("%H:%M:%S"),
+                }
+            else:
+                missing.append(m)
+
+        if not missing:
+            return
+
+        # REST fallback is deliberately round-robin so a broken/unavailable
+        # stream cannot cause 21 quote requests at once.
+        fallback_n = max(
+            0,
+            int(self.cfg.get("dashboard_rest_fallback_quotes_per_refresh", 2) or 0),
+        )
+        if fallback_n <= 0:
+            return
+        ordered = self.markets
+        n = len(ordered)
+        if not n:
+            return
+        checked = 0
+        updated = 0
+        while checked < n and updated < fallback_n:
+            idx = self._quote_rr_index % n
+            self._quote_rr_index = (self._quote_rr_index + 1) % n
+            checked += 1
+            m = ordered[idx]
+            if m not in missing:
+                continue
             epic = self.live_map.get(m.key, m.epic)
             try:
                 bid, ask = self.broker.quote(epic)
-                mid = (bid + ask) / 2.0 if bid and ask else bid or ask
                 self.quotes[m.key] = {
-                    "price": mid,
+                    "price": (bid + ask) / 2.0 if bid and ask else bid or ask,
                     "spread": (ask - bid) if bid and ask else None,
+                    "bid": bid,
+                    "ask": ask,
+                    "source": "rest",
                     "updated": datetime.now(BERLIN).strftime("%H:%M:%S"),
                 }
             except Exception as exc:
-                self.quotes[m.key] = {
-                    "price": None,
-                    "spread": None,
-                    "updated": str(exc)[:80],
-                }
+                current = self.quotes.get(m.key) or {}
+                if not current.get("price"):
+                    self.quotes[m.key] = {
+                        "price": None,
+                        "spread": None,
+                        "source": "rest",
+                        "updated": str(exc)[:80],
+                    }
+            updated += 1
 
 
     def charts(self, count: int = 180, only: str | None = None) -> dict:
@@ -325,7 +402,10 @@ class Desk:
         now = time.time()
         cache = getattr(self, "_chart_cache", None)
         cache_key = (int(count), only or "")
-        if cache and now - cache[0] < 15 and cache[1] == cache_key:
+        chart_cache_seconds = max(
+            1.0, float(self.cfg.get("dashboard_chart_cache_seconds", 10) or 10)
+        )
+        if cache and now - cache[0] < chart_cache_seconds and cache[1] == cache_key:
             return cache[2]
         primary = ["gold", "wallstreet30", "ustech100", "germany40"]
         if only:
