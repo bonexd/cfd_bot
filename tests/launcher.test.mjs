@@ -41,6 +41,15 @@ test('live launcher remembers one-time acknowledgement', () => {
   assert.doesNotMatch(live, /START\.bat/);
 });
 
+test('both launchers keep the bxane banner in a sticky terminal region when ANSI is available', () => {
+  for (const launcher of [start, live]) {
+    assert.match(launcher, /call :sticky_banner/i);
+    assert.match(launcher, /\[12;r/);
+    assert.match(launcher, /:reset_scroll_region/i);
+    assert.match(launcher, /BXANE\.txt/i);
+  }
+});
+
 test('both launchers show bxane as visible author', () => {
   for (const launcher of [start, live]) {
     assert.match(launcher, /echo\s+\^\|\s+BY bxane\s+\^\|/i);
