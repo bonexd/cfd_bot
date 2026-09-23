@@ -2,6 +2,11 @@ mode: demo  # demo | live  (Capital.com)
 desk: strategy-market-21
 
 execution:
+  # Runtime efficiency: retry temporary same-bar blockers at a controlled
+  # cadence and fetch a smaller candle payload for non-VWAP strategies.
+  retry_scan_seconds: 15
+  runtime_lookback_bars: 180
+
   # Scan all 21 configured strategy/market pairs. Orders are only submitted
   # when the assigned strategy and the existing quality/risk gates qualify.
   demo_market_scope: all
