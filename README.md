@@ -33,7 +33,7 @@ This packaged build adds **market-specific directional news scoring** and **pers
 - **Spread gate:** entries are skipped when spread exceeds the market limit.
 - **Directional news gate:** strong opposite news can veto a technical setup.
 - **Local dashboard:** reuses the trading process broker session instead of opening a second dashboard session. It binds to localhost by default and protects control actions with a per-run token.
-- **Live desk view:** refreshes account, quotes, news, streamers, and open-position marks on bounded intervals; positions prefer Capital.com's broker-reported unrealized P/L and fall back to a local estimate only when needed.
+- **Live desk view:** uses Capital.com's WebSocket quote stream when available, with bounded REST fallback; positions prefer Capital.com's broker-reported unrealized P/L and fall back to a local estimate only when needed.
 - **Capital.com headlines:** the news desk merges the public Capital.com feed with Google News RSS and caches each source independently.
 
 ## GitHub updates from ZIP downloads
@@ -167,9 +167,45 @@ Default mapping:
 
 Demo and live scan all 21 configured strategy/market pairs. Each market still has to pass its assigned strategy, spread, news, predictor/quality, position, margin-allocation, and duplicate-order gates before an order can be submitted. Markets unavailable to the connected Capital.com account are skipped at startup instead of stopping the whole desk.
 
-The bot polls the broker every 5 seconds by default, refreshes the dashboard every 3 seconds, and only evaluates a new candle once. News and streamer feeds refresh every 60 seconds, with Capital.com headlines included in the news desk. Trading sessions are Monday–Friday in this build. Germany 40's ORB strategy forms its opening range from 08:00–08:15 and can enter on a valid breakout until 09:30; after that, the ORB entry window is closed even though the market session remains enabled.
+The bot polls the trading loop every 5 seconds by default, streams desk quotes over Capital.com's WebSocket feed when available, updates visible prices at sub-second cadence, and only evaluates a new closed candle once. News and streamer feeds refresh every 60 seconds, with Capital.com headlines included in the news desk. Trading sessions are Monday–Friday in this build. Germany 40's ORB strategy forms its opening range from 08:00–08:15 and can enter on a valid breakout until 09:30; after that, the ORB entry window is closed even though the market session remains enabled.
 
 The registry also contains Donchian, Bollinger, Keltner, stochastic, CCI, Williams %R, ADX/DI, SAR, Supertrend, VWAP, momentum, engulfing, inside-bar, and other variants.
+
+## Main trading windows
+
+The bot scans all enabled markets, but these are the **main high-activity windows** where each assigned strategy is expected to find most of its useful setups. Times are shown in **Europe/Zurich (Swiss time)** and are approximate rather than guaranteed entry times. Exchange daylight-saving differences can move some windows by about one hour during parts of the year.
+
+| Market | Strategy | Main trading window |
+|---|---|---|
+| AUD/USD | `williams` | 00:00–04:00 |
+| USD/JPY | `stochastic` | 02:00–05:00 |
+| Japan 225 | `sar` | 02:00–04:30 |
+| Hong Kong 50 | `supertrend` | 03:30–06:00 |
+| EUR/JPY | `engulfing` | 08:00–10:30 |
+| Germany 40 | `orb` | 09:00–10:30 |
+| UK 100 | `adx_di` | 09:00–11:30 |
+| France 40 | `vwap` | 09:00–11:30 |
+| Switzerland 20 | `momentum` | 09:00–11:30 |
+| GBP/USD | `triple_ema` | 09:00–12:00 |
+| GBP/JPY | `inside_bar` | 09:00–12:00 |
+| USD/CHF | `bollinger` | 09:30–12:00 |
+| Gold | `rsi_reversion` | 14:00–17:00 |
+| EUR/USD | `sma_cross` | 14:00–17:00 |
+| Silver | `squeeze` | 14:00–17:30 |
+| Natural Gas | `keltner` | 14:30–18:00 |
+| Copper | `cci` | 14:30–18:00 |
+| US Crude Oil | `donchian` | 14:30–18:30 |
+| US Tech 100 | `ema_pullback` | 15:45–18:00 |
+| Wall Street 30 | `macd_trend` | 15:45–18:30 |
+| US 500 | `ema_atr` | 15:45–18:30 |
+
+Typical daily concentration:
+
+- **00:00–06:00:** Asia/Australia — AUD/USD, USD/JPY, Japan 225, Hong Kong 50.
+- **08:00–12:00:** Europe/London — Germany 40, UK 100, France 40, Switzerland 20, GBP/USD, USD/CHF, EUR/JPY, GBP/JPY.
+- **14:00–18:30:** London/New York overlap and US open — US Tech 100, Wall Street 30, US 500, Gold, Silver, Crude Oil, Natural Gas, Copper, EUR/USD.
+
+The **14:00–18:00 Swiss-time block** is the busiest overall window for this configuration because several metals, energy, FX, and US-index strategies are active together. These windows describe when the bot is most likely to find relevant setups; every order still has to pass the actual strategy, spread, news, predictor/quality, risk, margin, position, and duplicate-order gates.
 
 ## Walk-forward analysis
 
