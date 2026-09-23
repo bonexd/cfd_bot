@@ -2,180 +2,81 @@
 
 Built by **bxane**
 
-A Capital.com CFD trading desk that scans **21 strategy-mapped markets** and only submits orders when the assigned strategy and quality/risk gates qualify the setup.
+Capital.com CFD bot + local trading desk for **21 strategy-mapped markets**.
 
-This hardened local build keeps the original strategy family while adding stricter execution, risk, restart, backtest, predictor, and news safeguards.
+> CFDs are leveraged and high risk. No strategy, model, or backtest guarantees profit. Use demo mode first.
 
-> **Important:** CFDs are leveraged and can lose money quickly. No strategy, backtest, or prediction model guarantees profit. Use **demo mode first** and verify behavior before considering live trading.
+## Main features
 
-## Current chat build additions
+- Capital.com **demo + live** trading.
+- 21 markets with a dedicated strategy per market.
+- Equity/portfolio-based position sizing and SL/TP.
+- One-time SL/TP sync for new manual trades using the bot recommendation.
+- Spread, news, predictor, quality, margin, position, and duplicate-order gates.
+- Fast local desk with Capital.com **WebSocket price streaming** and REST fallback.
+- Local trading memory, trade/equity logs, walk-forward analysis, and tuning.
 
-This packaged build adds **market-specific directional news scoring** and **persistent searchable trading memory**. See `docs/BUILD_NOTES.md` for exact behavior and current limitations. The directional news engine is rules-based and the memory system is SQLite-backed structured retrieval; neither is a guarantee of profitable trading.
+## Start
 
+### Windows
 
-## What it does
+- **Demo:** double-click `START.bat`
+- **Live:** double-click `START_LIVE.bat`
+- **Update:** run `UPDATE.bat`
 
-- Connects to Capital.com demo or live REST API.
-- Routes different strategies per market.
-- Applies ATR-based stops/targets and equity-based position sizing.
-- Enforces spread, position, and index-correlation limits; the daily-loss halt is optional.
-- Filters entries with news and an optional statistical predictor.
-- Runs walk-forward strategy evaluation and Optuna tuning.
-- Logs trades, equity, risk state, and execution state locally.
+On first run, add your Capital.com credentials to `.env`:
 
-## Current safeguards
-
-- **Strict demo/live endpoints:** demo and live use separate Capital.com API hosts.
-- **Separate Windows launchers:** `START.bat` is demo; `START_LIVE.bat` uses a one-time local LIVE acknowledgement.
-- **Position controls:** configurable total, per-market, index, and estimated broker-margin allocation caps.
-- **Optional daily-loss halt:** can be enabled or disabled in `config.yaml`.
-- **Per-trade sizing:** position size is derived from equity, stop distance, and configured risk percentage.
-- **Spread gate:** entries are skipped when spread exceeds the market limit.
-- **Directional news gate:** strong opposite news can veto a technical setup.
-- **Local dashboard:** reuses the trading process broker session instead of opening a second dashboard session. It binds to localhost by default and protects control actions with a per-run token.
-- **Live desk view:** uses Capital.com's WebSocket quote stream when available, with bounded REST fallback; positions prefer Capital.com's broker-reported unrealized P/L and fall back to a local estimate only when needed.
-- **Capital.com headlines:** the news desk merges the public Capital.com feed with Google News RSS and caches each source independently.
-
-## GitHub updates from ZIP downloads
-
-GitHub ZIP downloads do not contain the hidden `.git` repository metadata. This project repairs that automatically:
-
-- `START.bat` and `START_LIVE.bat` detect a ZIP/non-Git copy and attach it directly to `https://github.com/bonexd/cfd_bot.git`.
-- After that first bootstrap, normal `git pull` works from the same folder.
-- `UPDATE.bat` can be run at any time to bootstrap Git when needed and update to `origin/main`.
-- Before `UPDATE.bat` resets tracked files to GitHub, uncommitted local tracked/untracked changes are saved to Git stash. Local commits are preserved on a backup branch.
-- `.env`, `.venv`, and `logs/` remain ignored and are not removed by the updater.
-
-If Git for Windows is missing, `UPDATE.bat` attempts to install it with WinGet.
-
-## Quick start — Windows
-
-1. Double-click `START.bat`. If the project came from a ZIP, it first attaches GitHub tracking so future `git pull` commands work. It then installs Python 3.12 with WinGet when needed, creates `.venv`, and installs every package in `requirements.txt`.
-2. On first run, fill `.env` with your Capital.com API credentials when prompted.
-3. Run `START.bat` again to start the DEMO desk.
-
-`START.bat` is intentionally **DEMO-only**. It will never start live trading. It now starts the trading loop immediately instead of blocking on first-run strategy tuning, and the web dashboard reuses the same authenticated Capital.com session.
-
-Automatic tuning is opt-in. To tune manually before trading, run `python -m app.auto --mode demo --force-tune`, or set `auto.tune_on_start: true` in `config.yaml`. Periodic retuning is disabled by default (`auto.periodic_retune: false`) because tuning is intentionally kept out of the critical startup path.
-
-## Quick start — terminal
-
-```bash
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-# source .venv/bin/activate
-
-python -m pip install -r requirements.txt
-cp .env.example .env   # Windows CMD: copy .env.example .env
+```text
+CAPITAL_API_KEY=
+CAPITAL_EMAIL=
+CAPITAL_API_PASSWORD=
+CAPITAL_ACCOUNT_ID=
 ```
 
-Fill `.env`, then:
+`CAPITAL_ACCOUNT_ID` is optional.
+
+### Terminal
 
 ```bash
+python -m pip install -r requirements.txt
 python -m app.main --mode demo
 ```
 
-Run one scan only:
-
-```bash
-python -m app.main --mode demo --once
-```
-
-Run selected markets only:
-
-```bash
-python -m app.main --mode demo --only gold germany40
-```
-
-## Dashboard access
-
-By default the web desk binds only to `127.0.0.1`. The launcher opens a URL containing a random one-run control token; the page stores it in session storage and removes it from the visible address bar.
-
-To deliberately expose the dashboard to another device on the same trusted LAN, set:
-
-```text
-CFD_WEB_HOST=0.0.0.0
-```
-
-The terminal will print a tokenized phone URL. Control endpoints still require that token. Do not expose port 8484 directly to the public internet.
-
-## Live mode
-
-Windows now has a separate live launcher:
-
-```text
-START_LIVE.bat
-```
-
-It shows the current risk settings and asks for a one-time Y/N acknowledgement on the first LIVE launch. After that, `.live_acknowledged` is stored locally and future LIVE launches start without another confirmation prompt.
-
-You can still start live mode from a terminal:
+Live:
 
 ```bash
 python -m app.main --mode live
 ```
 
-`START.bat` remains demo-only. The startup preflight must still pass, and the credentials in `.env` must work with the Capital.com live environment.
+## Risk
 
-## Configuration
+Current standard profile at **200+ account-currency units**:
 
-Main settings live in `config.yaml`.
+- 0.7% target risk per trade
+- 30% portfolio margin cap
+- 12 open positions max
+- 4 positions per market
+- 8 index positions max
 
-- `risk.risk_per_trade_pct`: target cash risk per trade.
-- `risk.max_portfolio_allocation_pct`: estimated open broker-margin cap as a percentage of equity (default: 30%).
-- `risk.daily_loss_enabled`: turn the automatic daily-loss halt on/off.
-- `risk.max_daily_loss_pct`: daily halt threshold when enabled.
-- `risk.max_open_positions`: total position cap (default: 12).
-- `risk.max_positions_per_market`: per-market position cap (default: 4).
-- `risk.max_index_positions`: index-position cap (default: 8).
-- `news.max_headline_age_seconds`: maximum age of a hot headline that can block entries.
-- `news.fail_closed`: set `true` to block entries if news is completely unavailable.
-- `predict.enabled`: disables predictor computation when `false`.
-- `predict.filter`: allows a healthy predictor to veto signals when `true`.
-- `auto.min_oos_trades`, `auto.min_oos_pf`: walk-forward guardrails.
-- `backtest.slippage_points`, `backtest.fee_per_trade_cash`: conservative research costs.
+Small-account bootstrap:
 
-## Strategy routing
+- **40–199.99:** bootstrap mode
+- 2% target risk per trade
+- 4% hard minimum-lot risk cap
+- 80% portfolio margin cap
+- 3 open positions max
+- 2 positions per market
+- 2 index positions max
+- **Below 40:** new entries blocked
+- **200+:** automatically returns to standard profile
 
-Default mapping:
+The broker-reported account equity/currency is used for live risk calculations.
 
-| Market | Strategy |
-|---|---|
-| Germany 40 | `orb` |
-| US Tech 100 | `ema_pullback` |
-| Wall Street 30 | `macd_trend` |
-| Gold | `rsi_reversion` |
-| US 500 | `ema_atr` |
-| US Crude Oil | `donchian` |
-| EUR/USD | `sma_cross` |
-| GBP/USD | `triple_ema` |
-| USD/CHF | `bollinger` |
-| Natural Gas | `keltner` |
-| Silver | `squeeze` |
-| USD/JPY | `stochastic` |
-| Copper | `cci` |
-| AUD/USD | `williams` |
-| UK 100 | `adx_di` |
-| Japan 225 | `sar` |
-| Hong Kong 50 | `supertrend` |
-| France 40 | `vwap` |
-| Switzerland 20 | `momentum` |
-| EUR/JPY | `engulfing` |
-| GBP/JPY | `inside_bar` |
+## Markets, strategies & main trading times
 
-Demo and live scan all 21 configured strategy/market pairs. Each market still has to pass its assigned strategy, spread, news, predictor/quality, position, margin-allocation, and duplicate-order gates before an order can be submitted. Markets unavailable to the connected Capital.com account are skipped at startup instead of stopping the whole desk.
+Times are **Europe/Zurich / Swiss time**. These are the main high-activity windows, not guaranteed entry times. DST differences can temporarily shift some markets by about one hour.
 
-The bot polls the trading loop every 5 seconds by default, streams desk quotes over Capital.com's WebSocket feed when available, updates visible prices at sub-second cadence, and only evaluates a new closed candle once. News and streamer feeds refresh every 60 seconds, with Capital.com headlines included in the news desk. Trading sessions are Monday–Friday in this build. Germany 40's ORB strategy forms its opening range from 08:00–08:15 and can enter on a valid breakout until 09:30; after that, the ORB entry window is closed even though the market session remains enabled.
-
-The registry also contains Donchian, Bollinger, Keltner, stochastic, CCI, Williams %R, ADX/DI, SAR, Supertrend, VWAP, momentum, engulfing, inside-bar, and other variants.
-
-## Main trading windows
-
-The bot scans all enabled markets, but these are the **main high-activity windows** where each assigned strategy is expected to find most of its useful setups. Times are shown in **Europe/Zurich (Swiss time)** and are approximate rather than guaranteed entry times. Exchange daylight-saving differences can move some windows by about one hour during parts of the year.
-
-| Market | Strategy | Main trading window |
+| Market | Strategy | Main time |
 |---|---|---|
 | AUD/USD | `williams` | 00:00–04:00 |
 | USD/JPY | `stochastic` | 02:00–05:00 |
@@ -199,64 +100,46 @@ The bot scans all enabled markets, but these are the **main high-activity window
 | Wall Street 30 | `macd_trend` | 15:45–18:30 |
 | US 500 | `ema_atr` | 15:45–18:30 |
 
-Typical daily concentration:
+**Main overall activity window:** roughly **14:00–18:00 Swiss time**.
 
-- **00:00–06:00:** Asia/Australia — AUD/USD, USD/JPY, Japan 225, Hong Kong 50.
-- **08:00–12:00:** Europe/London — Germany 40, UK 100, France 40, Switzerland 20, GBP/USD, USD/CHF, EUR/JPY, GBP/JPY.
-- **14:00–18:30:** London/New York overlap and US open — US Tech 100, Wall Street 30, US 500, Gold, Silver, Crude Oil, Natural Gas, Copper, EUR/USD.
+Every order still has to pass the bot's strategy and risk filters.
 
-The **14:00–18:00 Swiss-time block** is the busiest overall window for this configuration because several metals, energy, FX, and US-index strategies are active together. These windows describe when the bot is most likely to find relevant setups; every order still has to pass the actual strategy, spread, news, predictor/quality, risk, margin, position, and duplicate-order gates.
+## Desk
 
-## Walk-forward analysis
+- WebSocket prices when available.
+- Visible price/status refresh: about **500 ms**.
+- Account cache: **2 s**.
+- Trades/activity refresh: **5 s**.
+- Charts refresh: **10 s**.
+- Shows the exact no-trade reason per market.
+- Dashboard is localhost-only by default.
 
-Example:
-
-```bash
-python -m research.walk --mode demo --method rolling --bars 1000 --train 400 --test 100 --embargo 5
-```
-
-Apply winners to `config.yaml` only after reviewing the report:
-
-```bash
-python -m research.walk --mode demo --method rolling --bars 1000 --train 400 --test 100 --embargo 5 --apply
-```
-
-Historical results are estimates, not promises. The simulator now charges configured execution costs and uses the same minimum-lot risk rule as live sizing.
-
-## Repository layout
+To expose it to your trusted LAN:
 
 ```text
-app/        bot runtime, broker, risk, strategies, dashboard backend
-research/   walk-forward analysis and tuning
-scripts/    setup and maintenance helpers
-docs/       guides and build notes
-web/        browser dashboard
+CFD_WEB_HOST=0.0.0.0
 ```
 
-The root now stays focused on launchers, configuration, dependencies, README/license, and GitHub metadata.
+Do not expose the dashboard port directly to the public internet.
 
-## Files
+## Important files
 
-- `app/main.py` — trading loop.
-- `app/broker/capital.py` — Capital.com REST broker adapter.
-- `app/risk.py` — account gates and position sizing.
-- `app/strategy/` — signal strategies, routing, tuning helpers.
-- `app/predict.py` — statistical direction filter with validation health.
-- `app/news.py` — market-scoped news gate.
-- `research/walk.py` — walk-forward research/tuning.
-- `config.yaml` — user configuration.
-- `docs/GUIDE.md` — detailed setup and operating guide.
+- `config.yaml` — bot/risk settings
+- `app/main.py` — trading loop
+- `app/risk.py` — sizing and risk limits
+- `app/broker/capital.py` — Capital.com REST/WebSocket integration
+- `app/strategy/` — strategies
+- `web/index.html` — desk UI
+- `docs/GUIDE.md` — detailed guide
 
-## Validation
-
-The GitHub smoke workflow installs `requirements.txt`, compiles/imports the startup modules, checks dashboard JavaScript syntax, and validates key risk/launcher guards.
-
-Local compile check:
+## Tests
 
 ```bash
-python -m py_compile app/main.py app/auto.py app/desk.py app/web_app.py research/walk.py
+python -m unittest discover -s tests -p "test_*.py"
 ```
+
+GitHub Actions also runs Python, dashboard, launcher, and risk smoke tests.
 
 ## License
 
-This repository uses the **Source-Available Use-Only License v1.0** in `LICENSE.md`. You may run the unmodified software for your own personal/internal use. Modification, redistribution, resale, sublicensing, repackaging, and offering it as a service require prior written permission from the copyright holder.
+Source-Available Use-Only License v1.0. See `LICENSE.md`.
