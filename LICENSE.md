@@ -1,6 +1,6 @@
 # Source-Available Use-Only License v1.0
 
-Copyright (c) 2026 bloodvitr
+Copyright (c) 2026 bxane
 
 ## 1. License Grant
 
