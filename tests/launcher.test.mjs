@@ -25,7 +25,7 @@ test('demo launcher bootstraps Python and every declared dependency', () => {
   assert.match(start, /-m venv \.venv/);
   assert.match(start, /-m pip install -r requirements\.txt/);
   assert.match(start, /import pandas,yaml,dotenv,optuna/);
-  assert.match(start, /-m app\.auto --mode demo --skip-tune/);
+  assert.match(start, /scripts\\sticky_console\.py --mode demo/);
   for (const packageName of ['pandas', 'numpy', 'pyyaml', 'python-dotenv', 'optuna', 'websocket-client']) {
     assert.match(requirements.toLowerCase(), new RegExp(`^${packageName}`, 'm'));
   }
@@ -37,7 +37,7 @@ test('live launcher remembers one-time acknowledgement', () => {
   assert.match(live, />"\.live_acknowledged" echo acknowledged/i);
   assert.match(live, /starting without another prompt/i);
   assert.doesNotMatch(live, /Type LIVE and press Enter to continue/);
-  assert.match(live, /-m app\.auto --mode live --skip-tune/);
+  assert.match(live, /scripts\\sticky_console\.py --mode live/);
   assert.doesNotMatch(live, /START\.bat/);
 });
 
@@ -74,4 +74,17 @@ test('updater preserves local work before resetting to GitHub main', () => {
   assert.match(updater, /git branch "!BACKUP_BRANCH!" HEAD/i);
   assert.match(updater, /git reset --hard origin\/main/i);
   assert.match(gitignore, /^\.env$/m);
+});
+
+
+test('launchers use the persistent console renderer so BXANE cannot scroll away', () => {
+  const sticky = fs.readFileSync(path.join(root, 'scripts', 'sticky_console.py'), 'utf8');
+  for (const launcher of [start, live]) {
+    assert.match(launcher, /sticky_console\.py/);
+    assert.match(launcher, /call :reset_scroll_region/i);
+  }
+  assert.match(sticky, /stdout=subprocess\.PIPE/);
+  assert.match(sticky, /\x1b\[H\x1b\[2J/);
+  assert.match(sticky, /Child output is piped/);
+  assert.match(sticky, /BANNER_PATH/);
 });
