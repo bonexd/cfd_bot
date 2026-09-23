@@ -3,9 +3,14 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 title CFD Bot - Capital.com LIVE
 
-echo ============================================================
-echo ^|                       BY bxane                       ^|
-echo ============================================================
+chcp 65001 >nul 2>&1
+if exist "%~dp0BXANE.txt" (
+  type "%~dp0BXANE.txt"
+) else (
+  echo ============================================================
+  echo ^|                       BY bxane                       ^|
+  echo ============================================================
+)
 echo.
 
 if not exist ".git" (
