@@ -14,7 +14,10 @@ test("live feeds use short bounded refresh intervals", () => {
   assert.match(config, /poll_seconds:\s*5\b/);
   assert.match(config, /news:\s*[\s\S]*?refresh_seconds:\s*60\b/);
   assert.match(config, /streamers:\s*[\s\S]*?refresh_seconds:\s*60\b/);
-  assert.match(page, /setInterval\(refresh,\s*5000\)/);
+  assert.match(page, /setInterval\(refreshStatus,\s*500\)/);
+  assert.match(page, /setInterval\(refreshSlow,\s*5000\)/);
+  assert.match(page, /setInterval\(refreshCharts,\s*10000\)/);
+  assert.match(config, /snapshot_cache_seconds:\s*0\.25\b/);
 });
 
 test("all 21 strategy markets are enabled for demo and live scanning", () => {
@@ -34,6 +37,15 @@ test("Capital.com headlines are merged into the existing news feed", () => {
 
 test("streamer discovery targets CFD market-analysis creators", () => {
   assert.match(streamers, /CFD trading live market analysis/);
+});
+
+test("desk uses Capital.com WebSocket quotes with REST fallback", () => {
+  const broker = fs.readFileSync(new URL("app/broker/capital.py", root), "utf8");
+  assert.match(broker, /marketData\.subscribe/);
+  assert.match(broker, /wss:\/\/api-streaming-capital\.backend-capital\.com\/connect/);
+  assert.match(desk, /stream_quote/);
+  assert.match(desk, /dashboard_rest_fallback_quotes_per_refresh/);
+  assert.match(page, /LIVE STREAM/);
 });
 
 test("open positions expose live mark and estimated P/L", () => {
