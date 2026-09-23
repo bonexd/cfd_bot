@@ -272,6 +272,40 @@ def terminal_scan_due(
     return now >= bar_time + timedelta(seconds=(2 * seconds) + 1)
 
 
+def retry_scan_due(
+    state: dict,
+    market_key: str,
+    min_interval_seconds: float,
+    now: datetime | None = None,
+) -> bool:
+    """Throttle same-bar retries after non-terminal blockers.
+
+    Technical signals are based on closed candles, so re-running the full
+    pipeline every few seconds after a temporary blocker wastes broker/API
+    bandwidth without creating a new technical setup.
+    """
+    interval = max(0.0, float(min_interval_seconds or 0))
+    if interval <= 0:
+        return True
+    row = (state.get("diagnostics") or {}).get(market_key) or {}
+    if bool(row.get("terminal")):
+        return True
+    if str(row.get("status") or "") not in {"blocked", "no_signal"}:
+        return True
+    raw = row.get("time")
+    if not raw:
+        return True
+    try:
+        then = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=timezone.utc)
+        then = then.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return True
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    return (current - then).total_seconds() >= interval
+
+
 def order_guard_key(market_key: str, bar_key: str, strategy: str, side: str) -> str:
     return f"{market_key}|{bar_key}|{strategy}|{side}"
 
@@ -380,6 +414,35 @@ def open_index_count(broker, markets: list[Market], positions=None) -> int:
         elif p.symbol in index_epics:
             n += 1
     return n
+
+
+def runtime_lookback_bars(
+    cfg: dict,
+    market: Market,
+    timeframe: str,
+    configured_lookback: int,
+) -> int:
+    """Use a smaller live payload where strategy math does not need 400 bars."""
+    if str(timeframe) != "1m":
+        return int(configured_lookback)
+
+    strategy_cfg = cfg.get("strategy") or {}
+    strategy_name = (
+        (strategy_cfg.get("per_market") or {}).get(market.key)
+        or strategy_cfg.get("default")
+        or strategy_cfg.get("name")
+        or ""
+    )
+    # Session VWAP needs the complete European cash session. Keep a longer
+    # window for that one strategy; 180 bars is ample for the other current
+    # indicators (largest configured EMA is 55 plus warmup).
+    if str(strategy_name).lower() == "vwap":
+        return max(int(configured_lookback), 600)
+
+    live_cap = int((cfg.get("execution") or {}).get("runtime_lookback_bars", 180) or 0)
+    if live_cap <= 0:
+        return int(configured_lookback)
+    return max(120, min(int(configured_lookback), live_cap))
 
 
 def fetch_capital_bars(broker, epic: str, timeframe: str, lookback: int):
@@ -711,11 +774,41 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
             note_decision(state, market, "session", session_msg, status="blocked", terminal=False)
             continue
 
+        market_open = open_by_market.get(market.key, 0)
+        corr = risk.allow_new(
+            market,
+            idx_open,
+            open_market=market_open,
+            open_positions=open_total,
+            equity=acct.equity,
+        )
+        if not corr.allowed:
+            print(f"  {market.name}: {corr.reason}")
+            note_decision(
+                state,
+                market,
+                "position_limit",
+                corr.reason,
+                status="blocked",
+                terminal=False,
+            )
+            continue
+
         if not terminal_scan_due(state, market.key, tf):
+            continue
+        retry_seconds = float(
+            (cfg.get("execution") or {}).get("retry_scan_seconds", 15) or 0
+        )
+        if not retry_scan_due(state, market.key, retry_seconds):
             continue
 
         try:
-            df, bid, ask = fetch_capital_bars(broker, symbol, tf, lookback)
+            market_lookback = runtime_lookback_bars(
+                trade_cfg, market, tf, lookback
+            )
+            df, bid, ask = fetch_capital_bars(
+                broker, symbol, tf, market_lookback
+            )
         except Exception as exc:
             why = f"data error {exc}"
             print(f"  {market.name}: {why}")
@@ -732,19 +825,6 @@ def run_once(cfg: dict, mode: str, broker, risk: RiskManager, state: dict, marke
         bar_key = str(df.index[-1])
         if bar_is_terminal(state, market.key, bar_key):
             print(f"  {market.name}: same bar already completed")
-            continue
-
-        market_open = open_by_market.get(market.key, 0)
-        corr = risk.allow_new(
-            market,
-            idx_open,
-            open_market=market_open,
-            open_positions=open_total,
-            equity=acct.equity,
-        )
-        if not corr.allowed:
-            print(f"  {market.name}: {corr.reason}")
-            note_decision(state, market, "position_limit", corr.reason, status="blocked", terminal=False, bar_key=bar_key)
             continue
 
         spread = risk.spread_ok(bid, ask, market)
