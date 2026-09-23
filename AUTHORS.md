@@ -1,3 +1,3 @@
 # Authors
 
-- Bxane
+- bxane
