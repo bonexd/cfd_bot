@@ -1,6 +1,6 @@
 # CFD Bot
 
-Built by **Abbas** and **[Bone](https://github.com/bonexd)**
+Built by **Bxane**
 
 A Capital.com CFD trading desk that scans **21 strategy-mapped markets** and only submits orders when the assigned strategy and quality/risk gates qualify the setup.
 
