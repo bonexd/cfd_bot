@@ -4,14 +4,7 @@ cd /d "%~dp0"
 title CFD Bot - Capital.com LIVE
 
 chcp 65001 >nul 2>&1
-if exist "%~dp0BXANE.txt" (
-  type "%~dp0BXANE.txt"
-) else (
-  echo ============================================================
-  echo ^|                       BY bxane                       ^|
-  echo ============================================================
-)
-echo.
+call :sticky_banner
 
 if not exist ".git" (
   echo ZIP/non-Git copy detected. Attaching GitHub tracking...
@@ -236,6 +229,7 @@ if not "%EXIT_CODE%"=="0" (
 
 echo.
 echo LIVE bot stopped normally.
+call :reset_scroll_region
 pause
 exit /b 0
 
@@ -290,8 +284,52 @@ for %%V in (314 313 312 311) do (
 
 exit /b 1
 
+:sticky_banner
+set "BXANE_STICKY=0"
+set "ESC="
+for /F "delims=" %%E in ('echo prompt $E^| cmd') do set "ESC=%%E"
+
+rem Keep BXANE fixed in rows 1-11. Only the log area from row 12 down scrolls.
+set "BXANE_ANSI=0"
+if defined WT_SESSION set "BXANE_ANSI=1"
+if defined ANSICON set "BXANE_ANSI=1"
+if /I "%ConEmuANSI%"=="ON" set "BXANE_ANSI=1"
+if defined TERM set "BXANE_ANSI=1"
+
+if "%BXANE_ANSI%"=="1" if defined ESC (
+  <nul set /p "=%ESC%[2J%ESC%[H"
+  if exist "%~dp0BXANE.txt" (
+    type "%~dp0BXANE.txt"
+  ) else (
+    echo ============================================================
+    echo ^|                       BY bxane                       ^|
+    echo ============================================================
+  )
+  <nul set /p "=%ESC%[12;r%ESC%[12;1H"
+  set "BXANE_STICKY=1"
+  exit /b 0
+)
+
+rem Fallback for classic CMD hosts that do not expose ANSI capability.
+if exist "%~dp0BXANE.txt" (
+  type "%~dp0BXANE.txt"
+) else (
+  echo ============================================================
+  echo ^|                       BY bxane                       ^|
+  echo ============================================================
+)
+echo.
+exit /b 0
+
+:reset_scroll_region
+if "%BXANE_STICKY%"=="1" if defined ESC (
+  <nul set /p "=%ESC%[r%ESC%[999;1H"
+)
+exit /b 0
+
 :fail
 echo.
 echo Startup failed. Read the error above.
+call :reset_scroll_region
 pause
 exit /b 1
