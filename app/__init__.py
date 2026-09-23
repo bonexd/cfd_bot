@@ -3,12 +3,12 @@
 The project historically used top-level imports. Keep the app directory on
 sys.path so those imports remain stable after the repository reorganization.
 
-Author: @bone (username @boneveil)
+Author: bxane
 """
 from pathlib import Path
 import sys
 
-__author__ = "@bone (username @boneveil)"
+__author__ = "bxane"
 
 _APP_DIR = str(Path(__file__).resolve().parent)
 if _APP_DIR not in sys.path:
