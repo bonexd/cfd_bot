@@ -1,4 +1,5 @@
 import copy
+import threading
 import time
 import unittest
 from datetime import datetime, timezone
@@ -301,6 +302,22 @@ class RuntimeRegressionTests(unittest.TestCase):
             requests[0],
             ("PUT", "/api/v1/positions/deal-1", {"stopLevel": 98.0, "profitLevel": 106.0}),
         )
+
+    def test_capital_stream_quote_cache_honors_freshness(self):
+        broker = CapitalBroker.__new__(CapitalBroker)
+        broker._stream_lock = threading.Lock()
+        broker._stream_quotes = {
+            "GOLD": {
+                "bid": 100.0,
+                "ask": 100.2,
+                "received_at": time.monotonic(),
+            }
+        }
+        quote = broker.stream_quote("GOLD", max_age=5.0)
+        self.assertIsNotNone(quote)
+        self.assertEqual(quote[:2], (100.0, 100.2))
+        broker._stream_quotes["GOLD"]["received_at"] = time.monotonic() - 10
+        self.assertIsNone(broker.stream_quote("GOLD", max_age=5.0))
 
     def test_retry_scan_throttles_recent_nonterminal_block(self):
         now = datetime(2026, 9, 23, 14, 0, 10, tzinfo=timezone.utc)
