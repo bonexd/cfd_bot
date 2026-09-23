@@ -1,4 +1,3 @@
 # Authors
 
-- @bone (@boneveil)
-- Abbas Masoumi
+- Bxane
