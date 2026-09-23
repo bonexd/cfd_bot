@@ -1445,6 +1445,7 @@
       root.innerHTML = list.map(m => {
         const decision = m.decision || {};
         const stage = String(decision.stage || 'waiting').replaceAll('_', ' ');
+        const reason = String(decision.reason || 'Waiting for next evaluation');
         const price = m.price == null ? '—' : Number(m.price).toFixed(Number(m.digits ?? 2));
         const group = String(m.group || 'market');
         const rec = m.recommendation || {};
@@ -1463,6 +1464,7 @@
             </div>
             <div class="market-watch-price">${esc(price)}</div>
             <div class="market-watch-meta">${esc(group)} · ${session} · ${esc(stage)}</div>
+            <div class="market-watch-meta" title="${esc(reason)}">${esc(reason)}</div>
             <div class="market-watch-meta">${recRisk > 0 ? ('RISK ' + esc(recCurrency) + ' ' + recRisk.toFixed(2)) : 'RISK —'} · ${recLots > 0 ? ('SIZE ' + recLots) : 'SIZE —'}</div>
           </div>
         `;
