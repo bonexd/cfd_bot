@@ -1040,6 +1040,9 @@
       hover: {},
       inspectKey: null,
       busy: false,
+      statusBusy: false,
+      chartsBusy: false,
+      slowBusy: false,
       controlToken,
     };
 
@@ -1561,6 +1564,16 @@
 
       renderPositions(s.positions || [], s.currency);
       renderMarketWatch(s.markets || []);
+
+      // Keep chart headers on the streaming quote even while candle history
+      // refreshes on a slower cadence.
+      (s.markets || []).forEach(m => {
+        const px = $('px-' + m.key);
+        if (px && m.price != null) {
+          px.textContent = Number(m.price).toFixed(Number(m.digits ?? 2));
+        }
+      });
+
       showError(s.error || '');
     }
 
@@ -1654,22 +1667,54 @@
       $('inspect-hover').textContent = '';
     }
 
-    async function refresh() {
+    async function refreshStatus() {
+      if (state.statusBusy) return;
+      state.statusBusy = true;
       try {
-        const [status, charts] = await Promise.all([
-          api('/api/status'),
-          api('/api/charts'),
-        ]);
-
+        const status = await api('/api/status');
         renderStatus(status);
-        renderCharts(charts);
-        $('last-update').textContent = 'updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-        await Promise.allSettled([renderTrades(), renderActivity()]);
+        const stream = status.quote_stream || {};
+        const transport = stream.connected ? 'LIVE STREAM' : 'REST FALLBACK';
+        $('last-update').textContent = transport + ' · ' + new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
       } catch (error) {
         showError('Dashboard refresh failed: ' + error.message);
         $('last-update').textContent = 'connection issue';
+      } finally {
+        state.statusBusy = false;
       }
+    }
+
+    async function refreshCharts() {
+      if (state.chartsBusy) return;
+      state.chartsBusy = true;
+      try {
+        const charts = await api('/api/charts');
+        renderCharts(charts);
+        // Re-apply streamed prices after candle rendering.
+        if (state.status) renderStatus(state.status);
+      } catch (error) {
+        showError('Chart refresh failed: ' + error.message);
+      } finally {
+        state.chartsBusy = false;
+      }
+    }
+
+    async function refreshSlow() {
+      if (state.slowBusy) return;
+      state.slowBusy = true;
+      try {
+        await Promise.allSettled([renderTrades(), renderActivity()]);
+      } finally {
+        state.slowBusy = false;
+      }
+    }
+
+    async function refresh() {
+      await Promise.allSettled([refreshStatus(), refreshCharts(), refreshSlow()]);
     }
 
     async function runAction(buttonId, path) {
@@ -1679,7 +1724,7 @@
       try {
         const status = await api(path, 'POST');
         renderStatus(status);
-        await refresh();
+        await Promise.allSettled([refreshStatus(), refreshCharts(), refreshSlow()]);
       } catch (error) {
         showError(error.message);
       } finally {
@@ -1701,7 +1746,9 @@
     });
 
     refresh();
-    setInterval(refresh, 5000);
+    setInterval(refreshStatus, 500);
+    setInterval(refreshSlow, 5000);
+    setInterval(refreshCharts, 10000);
 
     window.addEventListener('resize', () => {
       if (state.lastCharts) renderCharts(state.lastCharts);
