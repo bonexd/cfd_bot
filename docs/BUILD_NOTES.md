@@ -1,6 +1,6 @@
 # Complete build notes
 
-This ZIP contains the full `bloodvitr/cfd_bot` source tree plus the two changes requested in chat.
+This repository contains the full CFD bot source tree and the current build changes.
 
 ## Directional news engine
 
