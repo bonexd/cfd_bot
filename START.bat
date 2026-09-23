@@ -191,7 +191,8 @@ echo [5/5] Starting CFD bot in DEMO mode...
 echo Dashboard opens automatically with a one-run control token.
 echo Automatic tuning is skipped at startup so the bot starts immediately.
 echo.
-"%VENV_PY%" -m app.auto --mode demo --skip-tune
+call :reset_scroll_region
+"%VENV_PY%" -u scripts\sticky_console.py --mode demo
 set "EXIT_CODE=%errorlevel%"
 
 if not "%EXIT_CODE%"=="0" (
