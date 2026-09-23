@@ -17,6 +17,8 @@ from main import (
     enabled_markets,
     portfolio_adjusted_protection,
     resolved_markets,
+    retry_scan_due,
+    runtime_lookback_bars,
     sync_manual_trade_protection,
     terminal_scan_due,
 )
@@ -298,6 +300,48 @@ class RuntimeRegressionTests(unittest.TestCase):
         self.assertEqual(
             requests[0],
             ("PUT", "/api/v1/positions/deal-1", {"stopLevel": 98.0, "profitLevel": 106.0}),
+        )
+
+    def test_retry_scan_throttles_recent_nonterminal_block(self):
+        now = datetime(2026, 9, 23, 14, 0, 10, tzinfo=timezone.utc)
+        state = {
+            "diagnostics": {
+                "gold": {
+                    "time": "2026-09-23T14:00:00+00:00",
+                    "status": "blocked",
+                    "terminal": False,
+                }
+            }
+        }
+        self.assertFalse(retry_scan_due(state, "gold", 15, now))
+        self.assertTrue(
+            retry_scan_due(
+                state,
+                "gold",
+                15,
+                datetime(2026, 9, 23, 14, 0, 16, tzinfo=timezone.utc),
+            )
+        )
+
+    def test_runtime_lookback_is_small_except_vwap(self):
+        cfg = {
+            "execution": {"runtime_lookback_bars": 180},
+            "strategy": {
+                "default": "ema_pullback",
+                "per_market": {"france40": "vwap", "gold": "rsi_reversion"},
+            },
+        }
+        self.assertEqual(
+            runtime_lookback_bars(cfg, MARKETS["gold"], "1m", 400),
+            180,
+        )
+        self.assertEqual(
+            runtime_lookback_bars(cfg, MARKETS["france40"], "1m", 400),
+            600,
+        )
+        self.assertEqual(
+            runtime_lookback_bars(cfg, MARKETS["gold"], "5m", 400),
+            400,
         )
 
     def test_terminal_bar_scheduler_skips_redundant_scans(self):
