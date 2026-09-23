@@ -26,7 +26,7 @@ test('demo launcher bootstraps Python and every declared dependency', () => {
   assert.match(start, /-m pip install -r requirements\.txt/);
   assert.match(start, /import pandas,yaml,dotenv,optuna/);
   assert.match(start, /-m app\.auto --mode demo --skip-tune/);
-  for (const packageName of ['pandas', 'numpy', 'pyyaml', 'python-dotenv', 'optuna']) {
+  for (const packageName of ['pandas', 'numpy', 'pyyaml', 'python-dotenv', 'optuna', 'websocket-client']) {
     assert.match(requirements.toLowerCase(), new RegExp(`^${packageName}`, 'm'));
   }
 });
@@ -41,9 +41,9 @@ test('live launcher remembers one-time acknowledgement', () => {
   assert.doesNotMatch(live, /START\.bat/);
 });
 
-test('both launchers show Abbas and Bone as visible authors', () => {
+test('both launchers show bxane as visible author', () => {
   for (const launcher of [start, live]) {
-    assert.match(launcher, /echo\s+\^\|\s+BY ABBAS AND BONE @BONEXD\s+\^\|/i);
+    assert.match(launcher, /echo\s+\^\|\s+BY bxane\s+\^\|/i);
     assert.match(launcher, /echo\s+============================================================/);
   }
 });
