@@ -16,7 +16,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Compile core modules
-        run: python -m py_compile app/main.py app/auto.py app/desk.py app/web_app.py app/risk.py app/instruments.py app/broker/capital.py
+        run: python -m py_compile app/main.py app/auto.py app/desk.py app/web_app.py app/risk.py app/instruments.py app/broker/capital.py scripts/sticky_console.py
       - name: Import startup modules
         run: python -c "import app.auto, app.desk, app.web_app"
       - name: Run Python regression tests
