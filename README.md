@@ -22,7 +22,7 @@ Capital.com CFD bot + local trading desk for **21 strategy-mapped markets**.
 
 - **Demo:** double-click `START.bat`
 - **Live:** double-click `START_LIVE.bat`
-- **Update:** run `UPDATE.bat`
+- **Update:** run `UPDATE.bat` — updates only from `bxane-dev/cfd-bot`
 
 On first run, add your Capital.com credentials to `.env`:
 
