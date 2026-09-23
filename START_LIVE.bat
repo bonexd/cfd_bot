@@ -218,7 +218,8 @@ echo [6/6] Starting CFD bot in LIVE mode...
 echo Dashboard opens automatically with a one-run control token.
 echo Automatic tuning is skipped at startup.
 echo.
-"%VENV_PY%" -m app.auto --mode live --skip-tune
+call :reset_scroll_region
+"%VENV_PY%" -u scripts\sticky_console.py --mode live
 set "EXIT_CODE=%errorlevel%"
 
 if not "%EXIT_CODE%"=="0" (
