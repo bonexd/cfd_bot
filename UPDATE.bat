@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 title CFD Bot - GitHub Updater
 
-set "REPO_URL=https://github.com/bonexd/cfd_bot.git"
+set "REPO_URL=https://github.com/bxane-dev/cfd-bot.git"
 set "BOOTSTRAP_ONLY=0"
 if /I "%~1"=="--bootstrap-only" set "BOOTSTRAP_ONLY=1"
 
@@ -16,7 +16,7 @@ if errorlevel 1 (
   git init
   if errorlevel 1 goto :fail
   git remote remove origin >nul 2>&1
-  git remote add origin "%REPO_URL%"
+  call :lock_origin
   if errorlevel 1 goto :fail
   git fetch origin main --depth 1
   if errorlevel 1 goto :fail
@@ -24,14 +24,16 @@ if errorlevel 1 (
   if errorlevel 1 goto :fail
   git branch -M main
   git branch --set-upstream-to=origin/main main >nul 2>&1
-  echo GitHub tracking attached to bonexd/cfd_bot.
+  call :lock_origin
+  if errorlevel 1 goto :fail
+  echo GitHub tracking attached to bxane-dev/cfd-bot.
 )
 
 if "%BOOTSTRAP_ONLY%"=="1" exit /b 0
 
 echo.
-echo Updating from bonexd/cfd_bot...
-git remote set-url origin "%REPO_URL%"
+echo Updating only from bxane-dev/cfd-bot...
+call :lock_origin
 if errorlevel 1 goto :fail
 git fetch origin main --prune
 if errorlevel 1 goto :fail
@@ -60,11 +62,29 @@ if errorlevel 1 goto :fail
 git branch --set-upstream-to=origin/main main >nul 2>&1
 
 echo.
-echo Updated successfully from bonexd/cfd_bot.
+echo Updated successfully from bxane-dev/cfd-bot.
 git log -1 --oneline
 if "!DIRTY!"=="1" (
   echo Your previous local changes are preserved in Git stash.
   echo Run: git stash list
+)
+exit /b 0
+
+:lock_origin
+git remote get-url origin >nul 2>&1
+if errorlevel 1 (
+  git remote add origin "%REPO_URL%"
+  if errorlevel 1 exit /b 1
+) else (
+  git remote set-url origin "%REPO_URL%"
+  if errorlevel 1 exit /b 1
+)
+
+set "ORIGIN_URL="
+for /f "delims=" %%U in ('git remote get-url origin 2^>nul') do set "ORIGIN_URL=%%U"
+if /I not "!ORIGIN_URL!"=="%REPO_URL%" (
+  echo Refusing to update: origin is not bxane-dev/cfd-bot.
+  exit /b 1
 )
 exit /b 0
 
